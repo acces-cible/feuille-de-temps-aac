@@ -817,7 +817,7 @@ function renderEmpProfile(){
 async function syncEmpPrefsToAirtable(empId){
   const emp=DB.employees.find(e=>e.id===empId); if(!emp||!emp.airtableId) return;
   try{
-    await fetch('/api/updateEmployee',{
+    await fetch('/api/updateemployee',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -1072,7 +1072,7 @@ async function sendReminder(empId) {
   };
 
   try {
-    const response = await fetch('/api/syncAirtable', {
+    const response = await fetch('/api/syncairtable', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -1102,7 +1102,7 @@ async function remindAll(periodKey){
     emp.reminderCount++;
     if(emp.airtableId){
       try{
-        const resp=await fetch('/api/syncAirtable',{
+        const resp=await fetch('/api/syncairtable',{
           method:'POST',
           body:JSON.stringify({empId:emp.airtableId,date:today,'Envoyer Rappel':true})
         });
@@ -1593,7 +1593,7 @@ async function loadSheetFromAirtable(emp){
   const ps=ymd(period.start), pe=ymd(period.end);
   console.log(`loadSheet: ${emp.name} | ${ps} → ${pe}`);
   try{
-    const resp=await fetch(`/api/getTimesheet?empId=${encodeURIComponent(emp.airtableId)}&periodStart=${ps}&periodEnd=${pe}`);
+    const resp=await fetch(`/api/gettimesheet?empId=${encodeURIComponent(emp.airtableId)}&periodStart=${ps}&periodEnd=${pe}`);
     if(!resp.ok){ console.warn('getTimesheet status:', resp.status, await resp.text()); return; }
     const json=await resp.json();
     const atRows=json.rows||[];
@@ -1642,7 +1642,7 @@ async function syncFullSheetToAirtable(eid, pk){
       periodeDePaie: periodLabel
     };
     try{
-      const resp = await fetch('/api/syncAirtable',{
+      const resp = await fetch('/api/syncairtable',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify(data)
@@ -1692,7 +1692,7 @@ async function syncRowToAirtable(eid, pk, idx){
   };
 
   try {
-    const resp = await fetch('/api/syncAirtable', {
+    const resp = await fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1736,7 +1736,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       lunch: row.lunch || '',
       notes: row.notes || ''
     };
-    return fetch('/api/syncAirtable', {
+    return fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1756,7 +1756,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       lunch: row.lunch || '',
       notes: row.notes || ''
     };
-    return fetch('/api/syncAirtable', {
+    return fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1790,7 +1790,7 @@ async function init(){
   renderLoading('Chargement des employés…');
 
   try {
-    const resp = await fetch('/api/getEmployees');
+    const resp = await fetch('/api/getemployees');
     if(resp.ok){
       const apiEmployees = await resp.json();
 
