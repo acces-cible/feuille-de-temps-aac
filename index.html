@@ -301,6 +301,7 @@ let state = {
   adminTab:'overview',
   archiveFilter:{name:'',period:''},
   archiveSearch:'',
+  archivesLoading:false,
   mergeConflicts:null, mergePending:null,
   showMergeModal:false, showPasswordModal:false,
   showAddEmpModal:false, showRemoveConfirm:null,
@@ -309,6 +310,7 @@ let state = {
   conflictResolutions:{}, bulkOverwrite:false,
   loginPendingEmpId:null,
 };
+const _archiveLoadedPeriods = new Set();
 
 function save(){ DataService.save(DB); }
 
@@ -817,7 +819,7 @@ function renderEmpProfile(){
 async function syncEmpPrefsToAirtable(empId){
   const emp=DB.employees.find(e=>e.id===empId); if(!emp||!emp.airtableId) return;
   try{
-    await fetch('/api/updateemployee',{
+    await fetch('/api/updateEmployee',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -1072,7 +1074,7 @@ async function sendReminder(empId) {
   };
 
   try {
-    const response = await fetch('/api/syncairtable', {
+    const response = await fetch('/api/syncAirtable', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -1102,7 +1104,7 @@ async function remindAll(periodKey){
     emp.reminderCount++;
     if(emp.airtableId){
       try{
-        const resp=await fetch('/api/syncairtable',{
+        const resp=await fetch('/api/syncAirtable',{
           method:'POST',
           body:JSON.stringify({empId:emp.airtableId,date:today,'Envoyer Rappel':true})
         });
@@ -1215,25 +1217,29 @@ function previewTemplate(){
 function renderArchives(){
   const frag=document.createDocumentFragment();
   const periods=PERIOD.list(24);
+  const allEmps=DB.employees.slice().sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
   const filters=el('div','card p-4 mb-4 flex flex-wrap gap-3 items-end');
+  const loadLbl=state.archivesLoading?'⏳ Chargement…':'🔄 Charger depuis Airtable';
   filters.innerHTML=`
     <div><label class="field-label block mb-1">Employé</label>
       <select onchange="state.archiveFilter.name=this.value;render()">
         <option value="">Tous</option>
-        ${sortedEmployees().map(e=>`<option value="${e.id}" ${state.archiveFilter.name===e.id?'selected':''}>${e.name}</option>`).join('')}
+        ${allEmps.map(e=>`<option value="${e.id}" ${state.archiveFilter.name===e.id?'selected':''}>${e.name}${e.archived?' (archivé)':''}</option>`).join('')}
       </select></div>
     <div><label class="field-label block mb-1">Période</label>
-      <select onchange="state.archiveFilter.period=this.value;render()">
+      <select onchange="state.archiveFilter.period=this.value;if(this.value)loadArchivePeriod(this.value);else render()">
         <option value="">Toutes</option>
         ${periods.map(p=>`<option value="${p.key}" ${state.archiveFilter.period===p.key?'selected':''}>${PERIOD.label(p.start,p.end)}</option>`).join('')}
       </select></div>
     <div><label class="field-label block mb-1">Recherche (Notes)</label>
       <input type="text" placeholder="Notes…" value="${state.archiveSearch}"
         oninput="state.archiveSearch=this.value;render()" style="width:180px"></div>
-    <button onclick="exportFiltered()" class="btn btn-navy">📤 Exporter</button>`;
+    <button onclick="refreshArchives()" class="btn btn-navy" ${state.archivesLoading?'disabled':''} style="align-self:flex-end">${loadLbl}</button>
+    <button onclick="approveAllFiltered()" class="btn btn-green" style="align-self:flex-end">✓✓ Approuver tout</button>
+    <button onclick="exportFiltered()" class="btn btn-navy" style="align-self:flex-end">📤 Exporter</button>`;
   frag.appendChild(filters);
 
-  const summaryEmp=state.archiveFilter.name?[DB.employees.find(e=>e.id===state.archiveFilter.name)]:sortedEmployees();
+  const summaryEmp=state.archiveFilter.name?[DB.employees.find(e=>e.id===state.archiveFilter.name)]:allEmps;
   const summaryPeriods=state.archiveFilter.period?[periods.find(p=>p.key===state.archiveFilter.period)]:periods;
   const summaryCard=el('div','card p-4 mb-4');
   summaryCard.innerHTML=`
@@ -1280,7 +1286,9 @@ function renderArchives(){
         <td class="mono text-xs">${row.end||'—'}</td>
         <td class="total-cell text-xs">${w!==null?fmtMins(w):'—'}</td>
         <td class="text-xs">${hl(row.notes)}</td>
-        <td>${sheet.approved?'<span class="badge-approved">✓</span>':'<span class="badge-pending">En attente</span>'}</td>
+        <td>${sheet.approved
+          ?`<span class="badge-approved">✓ Approuvé</span> <button onclick="unlockSheet('${emp.id}','${period.key}')" class="btn btn-gray text-xs">🔓</button>`
+          :`<button onclick="approveSheet('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button>`}</td>
       </tr>`;
     }).join('')}
     ${rows.length===0?'<tr><td colspan="9" class="text-center text-slate-400 py-6">Aucun résultat.</td></tr>':''}
@@ -1292,6 +1300,45 @@ function renderArchives(){
 function exportFiltered(){
   downloadJSON({exported:new Date().toISOString(),filter:state.archiveFilter,db:DB},
     `fdt_export_${new Date().toISOString().slice(0,10)}.json`);
+}
+
+async function approveAllFiltered(){
+  const periods=PERIOD.list(24);
+  const allEmps=DB.employees.slice();
+  const summaryEmps  = state.archiveFilter.name   ? [allEmps.find(e=>e.id===state.archiveFilter.name)].filter(Boolean) : allEmps;
+  const summaryPeriods = state.archiveFilter.period ? [periods.find(p=>p.key===state.archiveFilter.period)].filter(Boolean) : periods;
+
+  // Compter les feuilles non-approuvées à traiter
+  const toApprove=[];
+  summaryPeriods.forEach(p=>{
+    summaryEmps.forEach(emp=>{
+      const key=`${emp.id}_${p.key}`;
+      const sheet=DB.timesheets[key];
+      if(sheet && !sheet.approved && calcSheetTotal(sheet)>0) toApprove.push({emp,period:p,key});
+    });
+  });
+
+  if(toApprove.length===0){ alert('Toutes les feuilles visibles sont déjà approuvées (ou sans heures).'); return; }
+
+  const periodDesc = state.archiveFilter.period
+    ? `la période sélectionnée`
+    : `${summaryPeriods.length} période(s)`;
+  const empDesc = state.archiveFilter.name
+    ? summaryEmps[0]?.name
+    : `tous les employés`;
+
+  if(!confirm(`Approuver ${toApprove.length} feuille(s) pour ${empDesc} — ${periodDesc}?`)) return;
+
+  autoBackup(DB,'approve-archives');
+  const now=new Date().toISOString();
+  toApprove.forEach(({key,emp,period})=>{
+    DB.timesheets[key].approved=true;
+    DB.timesheets[key].approvedAt=now;
+    DB.timesheets[key].totalMinutes=calcSheetTotal(DB.timesheets[key]);
+  });
+  save(); render();
+  // Sync Airtable en arrière-plan
+  toApprove.forEach(({emp,period})=> syncApprovalToAirtable(emp.id, period.key, true));
 }
 
 // ================================================================
@@ -1586,14 +1633,14 @@ function removeEmployee(empId){
 // ================================================================
 //  AIRTABLE READ
 // ================================================================
-async function loadSheetFromAirtable(emp){
+async function loadSheetFromAirtable(emp, periodOverride){
   if(!emp||!emp.airtableId){ console.warn('loadSheet: pas airtableId'); return; }
-  const period=PERIOD.current();
+  const period = periodOverride || PERIOD.current();
   const ymd=d=>{ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; };
   const ps=ymd(period.start), pe=ymd(period.end);
   console.log(`loadSheet: ${emp.name} | ${ps} → ${pe}`);
   try{
-    const resp=await fetch(`/api/gettimesheet?empId=${encodeURIComponent(emp.airtableId)}&periodStart=${ps}&periodEnd=${pe}`);
+    const resp=await fetch(`/api/getTimesheet?empId=${encodeURIComponent(emp.airtableId)}&periodStart=${ps}&periodEnd=${pe}`);
     if(!resp.ok){ console.warn('getTimesheet status:', resp.status, await resp.text()); return; }
     const json=await resp.json();
     const atRows=json.rows||[];
@@ -1613,6 +1660,31 @@ async function loadSheetFromAirtable(emp){
     if(changed){ save(); render(); console.log(`✅ Feuille mise à jour: ${emp.name}`); }
     else{ console.log(`Feuille déjà à jour: ${emp.name}`); }
   }catch(e){ console.warn('loadSheetFromAirtable erreur:', e.message); }
+}
+
+async function loadArchivePeriod(periodKey){
+  if(_archiveLoadedPeriods.has(periodKey)) return;
+  const period = PERIOD.list(24).find(p => p.key === periodKey);
+  if(!period) return;
+  state.archivesLoading = true; render();
+  await Promise.allSettled(DB.employees.map(emp => loadSheetFromAirtable(emp, period)));
+  _archiveLoadedPeriods.add(periodKey);
+  state.archivesLoading = false; render();
+}
+
+async function refreshArchives(){
+  const filterPeriod = state.archiveFilter.period;
+  const periods = filterPeriod
+    ? [PERIOD.list(24).find(p => p.key === filterPeriod)].filter(Boolean)
+    : PERIOD.list(24).slice(1, 4);
+  const filterEmp = state.archiveFilter.name;
+  const emps = filterEmp ? [DB.employees.find(e => e.id === filterEmp)].filter(Boolean) : DB.employees;
+  state.archivesLoading = true; render();
+  for(const period of periods){
+    await Promise.allSettled(emps.map(emp => loadSheetFromAirtable(emp, period)));
+    _archiveLoadedPeriods.add(period.key);
+  }
+  state.archivesLoading = false; render();
 }
 
 // Sync toute la feuille d'un employe vers Airtable
@@ -1642,7 +1714,7 @@ async function syncFullSheetToAirtable(eid, pk){
       periodeDePaie: periodLabel
     };
     try{
-      const resp = await fetch('/api/syncairtable',{
+      const resp = await fetch('/api/syncAirtable',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify(data)
@@ -1692,7 +1764,7 @@ async function syncRowToAirtable(eid, pk, idx){
   };
 
   try {
-    const resp = await fetch('/api/syncairtable', {
+    const resp = await fetch('/api/syncAirtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1736,7 +1808,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       lunch: row.lunch || '',
       notes: row.notes || ''
     };
-    return fetch('/api/syncairtable', {
+    return fetch('/api/syncAirtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1756,7 +1828,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       lunch: row.lunch || '',
       notes: row.notes || ''
     };
-    return fetch('/api/syncairtable', {
+    return fetch('/api/syncAirtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1790,7 +1862,7 @@ async function init(){
   renderLoading('Chargement des employés…');
 
   try {
-    const resp = await fetch('/api/getemployees');
+    const resp = await fetch('/api/getEmployees');
     if(resp.ok){
       const apiEmployees = await resp.json();
 
