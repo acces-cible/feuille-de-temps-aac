@@ -1,19 +1,5 @@
 const axios = require('axios');
 
-// Verrou en mémoire pour éviter les doublons lors de requêtes simultanées
-// Clé: "empId|date" → true si une requête est en cours
-const _locks = {};
-
-async function acquireLock(key, timeoutMs = 8000) {
-  const start = Date.now();
-  while (_locks[key]) {
-    if (Date.now() - start > timeoutMs) break; // sécurité anti-deadlock
-    await new Promise(r => setTimeout(r, 150));
-  }
-  _locks[key] = true;
-}
-function releaseLock(key) { delete _locks[key]; }
-
 // POST /api/syncAirtable
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -45,9 +31,6 @@ export default async function handler(req, res) {
     'Content-Type': 'application/json'
   };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
-
-  const lockKey = `${empId}|${date}`;
-  await acquireLock(lockKey);
 
   try {
     // Chercher lignes existantes pour cette date
@@ -108,11 +91,9 @@ export default async function handler(req, res) {
       }
     }
 
-    releaseLock(lockKey);
     return res.status(200).json({ message: 'OK' });
 
   } catch (error) {
-    releaseLock(lockKey);
     const detail = error.response ? JSON.stringify(error.response.data) : error.message;
     const status = error.response?.status || 500;
     console.error(`ERREUR AIRTABLE (${status}):`, detail);
