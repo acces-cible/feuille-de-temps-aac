@@ -1292,7 +1292,26 @@ async function runDiagnostic(){
     }catch(e){ t2.replaceWith(diagLine('d-ts','GET /api/gettimesheet','err',`Fetch échoué: ${e.message}`)); }
   }
 
-  // Test 3 — airtableId présents
+  // Test 4 — updateemployee
+  const emp2=DB.employees.find(e=>e.airtableId);
+  const t4=diagLine('d-upd','POST /api/updateemployee','pending');
+  results.appendChild(t4);
+  if(!emp2){
+    t4.replaceWith(diagLine('d-upd','POST /api/updateemployee','warn','Aucun employé avec airtableId'));
+  } else {
+    try{
+      const r=await fetch('/api/updateemployee',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ airtableId: emp2.airtableId, inputMode: emp2.inputMode||'clock' })
+      });
+      const txt=await r.text();
+      if(r.ok) t4.replaceWith(diagLine('d-upd','POST /api/updateemployee','ok',`HTTP ${r.status} — fonctionne pour ${emp2.name}`));
+      else      t4.replaceWith(diagLine('d-upd','POST /api/updateemployee','err',`HTTP ${r.status} — ${txt.slice(0,300)}`));
+    }catch(e){ t4.replaceWith(diagLine('d-upd','POST /api/updateemployee','err',`Fetch échoué: ${e.message}`)); }
+  }
+
+  // Test 5 — airtableId présents
   const missing=DB.employees.filter(e=>!e.airtableId);
   const t3=diagLine('d-ids','IDs Airtable des employés', missing.length>0?'warn':'ok',
     missing.length>0 ? `Manquants: ${missing.map(e=>e.name).join(', ')}` : `Tous les ${DB.employees.length} employés ont un ID Airtable`);
