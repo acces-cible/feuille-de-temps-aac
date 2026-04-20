@@ -18,6 +18,7 @@ export default async function handler(req, res) {
   const sendRem  = body["Envoyer Rappel"];
   const approved = body.approved;
   const periode  = body.periodeDePaie;
+  const recordId = body.recordId; // ← ID Airtable direct — évite la recherche par date
 
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID } = process.env;
 
@@ -32,8 +33,28 @@ export default async function handler(req, res) {
   };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
+  // Construire les champs
+  const fields = {};
+  fields["Employé"] = [empId];
+  fields["Date"]    = date;
+  if (body.start     !== undefined && body.start     !== '') fields["Début"]           = body.start.toString();
+  if (body.end       !== undefined && body.end       !== '') fields["Fin"]             = body.end.toString();
+  if (body.lunch     !== undefined && body.lunch     !== '') fields["Dîner"]           = body.lunch.toString();
+  if (body.notes     !== undefined)                          fields["Notes"]           = body.notes;
+  if (body.adminNote !== undefined)                          fields["Note Admin"]      = body.adminNote;
+  if (periode        !== undefined && periode        !== '') fields["Période de paie"] = periode;
+  if (approved       !== undefined)                          fields["Approuvé"]        = approved;
+  if (sendRem        !== undefined)                          fields["Envoyer Rappel"]  = sendRem;
+
   try {
-    // Chercher lignes existantes pour cette date
+    // ── Si on a déjà le record ID → PATCH direct, pas de recherche, pas de doublon possible
+    if (recordId) {
+      await axios.patch(`${baseUrl}/${recordId}`, { fields }, { headers });
+      console.log(`PATCH direct OK: ${recordId} / ${date}`);
+      return res.status(200).json({ message: 'OK' });
+    }
+
+    // ── Sinon → chercher par date + employé, puis PATCH ou POST
     const filter = `{Date}='${date}'`;
     const searchRes = await axios.get(
       `${baseUrl}?filterByFormula=${encodeURIComponent(filter)}`,
@@ -56,21 +77,6 @@ export default async function handler(req, res) {
     }
 
     const existingRecord = empRecords[0] || null;
-
-    // Construire les champs
-    const fields = {};
-    fields["Employé"] = [empId];
-    fields["Date"]    = date;
-
-    if (body.start     !== undefined && body.start     !== '') fields["Début"]           = body.start.toString();
-    if (body.end       !== undefined && body.end       !== '') fields["Fin"]             = body.end.toString();
-    if (body.lunch     !== undefined && body.lunch     !== '') fields["Dîner"]           = body.lunch.toString();
-    if (body.notes     !== undefined)                          fields["Notes"]           = body.notes;
-    if (body.adminNote !== undefined)                          fields["Note Admin"]      = body.adminNote;
-    if (periode        !== undefined && periode        !== '') fields["Période de paie"] = periode;
-    if (approved       !== undefined)                          fields["Approuvé"]        = approved;
-    if (sendRem        !== undefined)                          fields["Envoyer Rappel"]  = sendRem;
-
     console.log('Champs:', JSON.stringify(fields));
 
     if (existingRecord) {
