@@ -1237,6 +1237,7 @@ function renderDiagnostic(){
     <div class="flex flex-wrap gap-2 mb-4">
       <button onclick="runDiagnostic()" class="btn btn-navy">▶ Lancer le diagnostic</button>
       <button onclick="runSyncTest()" class="btn btn-green">🔄 Tester le sync (ligne test)</button>
+      <button onclick="runPasswordTest()" class="btn btn-orange">🔒 Tester sync mot de passe</button>
     </div>
     <div id="diag-results" class="space-y-2 text-sm font-mono"></div>`;
   frag.appendChild(card);
@@ -1327,6 +1328,36 @@ async function runDiagnostic(){
 
   // Test 4 — URLs correctes
   results.appendChild(diagLine('d-url','URLs API (casse)','ok','Toutes en minuscules ✓ (getemployees, gettimesheet, syncairtable, updateemployee)'));
+}
+
+async function runPasswordTest(){
+  const results = document.getElementById('diag-results');
+  const emp = DB.employees.find(e => e.airtableId);
+  if(!emp){ alert('Aucun employé avec airtableId'); return; }
+
+  const t = diagLine('d-pw', `POST /api/updateemployee (mot de passe test pour ${emp.name})`, 'pending');
+  results.insertBefore(t, results.firstChild);
+
+  try {
+    const r = await fetch('/api/updateemployee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        airtableId: emp.airtableId,
+        password: 'TEST_PASSWORD_DELETE_ME'
+      })
+    });
+    const txt = await r.text();
+    if(r.ok){
+      t.replaceWith(diagLine('d-pw', 'POST /api/updateemployee (mot de passe)', 'ok',
+        `✅ HTTP ${r.status} — Vérifiez la colonne "Mot de passe" dans Airtable pour ${emp.name} : elle devrait afficher "TEST_PASSWORD_DELETE_ME". Effacez-la ensuite manuellement.`));
+    } else {
+      t.replaceWith(diagLine('d-pw', 'POST /api/updateemployee (mot de passe)', 'err',
+        `❌ HTTP ${r.status} — ${txt.slice(0,400)} — Le fichier updateemployee.js sur Vercel est probablement l'ancienne version sans support mot de passe.`));
+    }
+  } catch(e) {
+    t.replaceWith(diagLine('d-pw', 'POST /api/updateemployee (mot de passe)', 'err', `Fetch échoué: ${e.message}`));
+  }
 }
 
 async function runSyncTest(){
