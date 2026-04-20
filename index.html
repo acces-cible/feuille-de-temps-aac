@@ -827,7 +827,8 @@ async function syncEmpPrefsToAirtable(empId){
         inputMode:     emp.inputMode,
         autoFill:      emp.autoFill,
         reminderCount: emp.reminderCount,
-        partTime:      emp.partTime
+        partTime:      emp.partTime,
+        password:      emp.password || ''   // ← sync mot de passe vers Airtable
       })
     });
     console.log('Prefs synced to Airtable:', emp.name);
@@ -854,7 +855,9 @@ function changeEmpPassword(){
   if(nw!==cf){err.textContent='Ne correspond pas.';err.classList.remove('hidden');return;}
   emp.password=nw;
   const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
-  save(); alert('Mot de passe changé!'); render();
+  save();
+  syncEmpPrefsToAirtable(emp.id);
+  alert('Mot de passe changé!'); render();
 }
 
 function createEmpPassword(){
@@ -866,7 +869,9 @@ function createEmpPassword(){
   if(nw!==cf){err.textContent='Ne correspond pas.';err.classList.remove('hidden');return;}
   emp.password=nw;
   const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
-  save(); alert('Mot de passe créé! Il sera demandé à la prochaine connexion.'); render();
+  save();
+  syncEmpPrefsToAirtable(emp.id);
+  alert('Mot de passe créé! Il sera demandé à la prochaine connexion.'); render();
 }
 
 // ================================================================
@@ -1235,7 +1240,6 @@ function renderArchives(){
       <input type="text" placeholder="Notes…" value="${state.archiveSearch}"
         oninput="state.archiveSearch=this.value;render()" style="width:180px"></div>
     <button onclick="refreshArchives()" class="btn btn-navy" ${state.archivesLoading?'disabled':''} style="align-self:flex-end">${loadLbl}</button>
-    <button onclick="approveAllFiltered()" class="btn btn-green" style="align-self:flex-end">✓✓ Approuver tout</button>
     <button onclick="exportFiltered()" class="btn btn-navy" style="align-self:flex-end">📤 Exporter</button>`;
   frag.appendChild(filters);
 
@@ -1300,45 +1304,6 @@ function renderArchives(){
 function exportFiltered(){
   downloadJSON({exported:new Date().toISOString(),filter:state.archiveFilter,db:DB},
     `fdt_export_${new Date().toISOString().slice(0,10)}.json`);
-}
-
-async function approveAllFiltered(){
-  const periods=PERIOD.list(24);
-  const allEmps=DB.employees.slice();
-  const summaryEmps  = state.archiveFilter.name   ? [allEmps.find(e=>e.id===state.archiveFilter.name)].filter(Boolean) : allEmps;
-  const summaryPeriods = state.archiveFilter.period ? [periods.find(p=>p.key===state.archiveFilter.period)].filter(Boolean) : periods;
-
-  // Compter les feuilles non-approuvées à traiter
-  const toApprove=[];
-  summaryPeriods.forEach(p=>{
-    summaryEmps.forEach(emp=>{
-      const key=`${emp.id}_${p.key}`;
-      const sheet=DB.timesheets[key];
-      if(sheet && !sheet.approved && calcSheetTotal(sheet)>0) toApprove.push({emp,period:p,key});
-    });
-  });
-
-  if(toApprove.length===0){ alert('Toutes les feuilles visibles sont déjà approuvées (ou sans heures).'); return; }
-
-  const periodDesc = state.archiveFilter.period
-    ? `la période sélectionnée`
-    : `${summaryPeriods.length} période(s)`;
-  const empDesc = state.archiveFilter.name
-    ? summaryEmps[0]?.name
-    : `tous les employés`;
-
-  if(!confirm(`Approuver ${toApprove.length} feuille(s) pour ${empDesc} — ${periodDesc}?`)) return;
-
-  autoBackup(DB,'approve-archives');
-  const now=new Date().toISOString();
-  toApprove.forEach(({key,emp,period})=>{
-    DB.timesheets[key].approved=true;
-    DB.timesheets[key].approvedAt=now;
-    DB.timesheets[key].totalMinutes=calcSheetTotal(DB.timesheets[key]);
-  });
-  save(); render();
-  // Sync Airtable en arrière-plan
-  toApprove.forEach(({emp,period})=> syncApprovalToAirtable(emp.id, period.key, true));
 }
 
 // ================================================================
@@ -1585,7 +1550,7 @@ function renderEmpPwResetModal(){
 
 function resetEmpPassword(empId){
   const emp=DB.employees.find(e=>e.id===empId);
-  if(emp){emp.password=null;save();}
+  if(emp){ emp.password=null; save(); syncEmpPrefsToAirtable(empId); }
   state.showEmpPwResetConfirm=null; render();
 }
 
@@ -1884,8 +1849,9 @@ async function init(){
           inputMode:     apiEmp.inputMode     || local?.inputMode     || 'clock',
           autoFill:      apiEmp.autoFill      ?? local?.autoFill      ?? false,
           reminderCount: apiEmp.reminderCount ?? local?.reminderCount ?? 0,
-          // Mot de passe: localStorage SEULEMENT (jamais dans Airtable — securite)
-          password:      local?.password      ?? null,
+
+          // Mot de passe: Airtable = source de vérité cross-device
+          password:      apiEmp.password || local?.password || null,
           archived:      local?.archived      ?? false,
           // Migration timesheets
           _oldId:        local?.id || null,
