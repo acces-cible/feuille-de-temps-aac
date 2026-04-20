@@ -1901,7 +1901,15 @@ async function syncFullSheetToAirtable(eid, pk){
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify(data)
       });
-      if(resp.ok) console.log(`  ✅ ${row.date}`);
+      if(resp.ok){
+        const json = await resp.json();
+        // Sauvegarder le recordId retourné → les prochaines syncs feront PATCH direct
+        if(json.recordId && !row.recordId){
+          row.recordId = json.recordId;
+          DataService.save(DB);
+        }
+        console.log(`  ✅ ${row.date} → ${json.recordId||'(déjà connu)'}`);
+      }
       else console.error(`  ❌ ${row.date}:`, resp.status, await resp.text());
     }catch(e){ console.error(`  ❌ ${row.date}:`, e.message); }
   }
@@ -2026,6 +2034,15 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
 // ================================================================
 function el(tag,className){ const e=document.createElement(tag); if(className)e.className=className; return e; }
 function logout(){ state.currentUser=null; state.view='login'; state.adminTab='overview'; render(); }
+
+function showToast(msg, type='ok'){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const t=document.createElement('div');
+  t.className=`toast toast-${type}`;
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 4200);
+}
 
 // ================================================================
 //  INIT — charge les employés depuis Airtable au démarrage
