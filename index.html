@@ -824,10 +824,10 @@ function renderEmpProfile(){
 }
 
 // Sync les preferences employe vers Airtable (inputMode, autoFill, etc.)
-async function syncEmpPrefsToAirtable(empId){
+async function syncEmpPrefsToAirtable(empId, showFeedback=false){
   const emp=DB.employees.find(e=>e.id===empId); if(!emp||!emp.airtableId) return;
   try{
-    await fetch('/api/updateemployee',{
+    const resp=await fetch('/api/updateemployee',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -836,11 +836,21 @@ async function syncEmpPrefsToAirtable(empId){
         autoFill:      emp.autoFill,
         reminderCount: emp.reminderCount,
         partTime:      emp.partTime,
-        password:      emp.password || ''   // ← sync mot de passe vers Airtable
+        password:      emp.password ?? ''   // null → '' pour effacer dans Airtable
       })
     });
-    console.log('Prefs synced to Airtable:', emp.name);
-  }catch(e){ console.warn('syncEmpPrefsToAirtable:', e.message); }
+    if(resp.ok){
+      console.log('Prefs synced to Airtable:', emp.name);
+      if(showFeedback) showToast('✅ Mot de passe synchronisé dans Airtable', 'ok');
+    } else {
+      const err=await resp.text();
+      console.error('syncEmpPrefsToAirtable erreur:', resp.status, err);
+      if(showFeedback) showToast(`❌ Erreur sync Airtable (${resp.status}) — ${err.slice(0,100)}`, 'err');
+    }
+  }catch(e){
+    console.warn('syncEmpPrefsToAirtable:', e.message);
+    if(showFeedback) showToast(`❌ Connexion échouée: ${e.message}`, 'err');
+  }
 }
 
 function setInputMode(mode){
@@ -864,7 +874,7 @@ function changeEmpPassword(){
   emp.password=nw;
   const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
   save();
-  syncEmpPrefsToAirtable(emp.id);
+  syncEmpPrefsToAirtable(emp.id, true);
   alert('Mot de passe changé!'); render();
 }
 
@@ -878,7 +888,7 @@ function createEmpPassword(){
   emp.password=nw;
   const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
   save();
-  syncEmpPrefsToAirtable(emp.id);
+  syncEmpPrefsToAirtable(emp.id, true);
   alert('Mot de passe créé! Il sera demandé à la prochaine connexion.'); render();
 }
 
@@ -1722,7 +1732,11 @@ function renderEmpPwResetModal(){
 
 function resetEmpPassword(empId){
   const emp=DB.employees.find(e=>e.id===empId);
-  if(emp){ emp.password=null; save(); syncEmpPrefsToAirtable(empId); }
+  if(emp){
+    emp.password=null;
+    save();
+    syncEmpPrefsToAirtable(empId, true); // envoie password:'' → efface dans Airtable
+  }
   state.showEmpPwResetConfirm=null; render();
 }
 
