@@ -902,11 +902,18 @@ async function createEmpPassword(){
   const err=document.getElementById('ep-err');
   if(nw.length<4){err.textContent='Min. 4 caractères.';err.classList.remove('hidden');return;}
   if(nw!==cf){err.textContent='Ne correspond pas.';err.classList.remove('hidden');return;}
-  emp.password=nw;
-  const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
-  save();
-  await syncEmpPrefsToAirtable(emp.id, true); // await = attend la réponse avant de continuer
-  render();
+  if(!emp){err.textContent='Erreur: employé introuvable.';err.classList.remove('hidden');return;}
+  err.classList.add('hidden');
+  try{
+    emp.password=nw;
+    const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
+    save();
+    await syncEmpPrefsToAirtable(emp.id, true);
+    render();
+  }catch(e){
+    err.textContent='Erreur: '+e.message;
+    err.classList.remove('hidden');
+  }
 }
 
 // ================================================================
@@ -1818,6 +1825,8 @@ async function loadSheetFromAirtable(emp, periodOverride){
     let changed=false;
     atRows.forEach(at=>{
       const lr=sheet.rows.find(r=>r.date===at.date); if(!lr) return;
+      // Toujours sauvegarder le recordId — clé pour éviter les doublons
+      if(at.recordId&&at.recordId!==lr.recordId){lr.recordId=at.recordId;changed=true;}
       if(at.start!==undefined&&at.start!==lr.start){lr.start=at.start;changed=true;}
       if(at.end!==undefined&&at.end!==lr.end){lr.end=at.end;changed=true;}
       if(at.lunch!==undefined&&at.lunch!==lr.lunch){lr.lunch=at.lunch;changed=true;}
@@ -1878,6 +1887,7 @@ async function syncFullSheetToAirtable(eid, pk){
     const data = {
       empId:         emp.airtableId,
       date:          row.date,
+      recordId:      row.recordId   || undefined,  // ← PATCH direct si connu
       start:         row.start     || '',
       end:           row.end       || '',
       lunch:         row.lunch     || '',
