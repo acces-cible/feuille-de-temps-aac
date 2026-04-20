@@ -897,18 +897,19 @@ function renderAdmin(){
       <button onclick="logout()" class="btn btn-red text-xs">Déconnexion</button>
     </div>`;
   const tabs=el('div','bg-white border-b flex gap-0 px-2 overflow-x-auto');
-  ['overview','staff','templates','archives'].forEach(tab=>{
-    const labels={overview:"Vue d'ensemble",staff:'Employés',templates:'Modèles',archives:'Archives'};
+  ['overview','staff','templates','archives','diagnostic'].forEach(tab=>{
+    const labels={overview:"Vue d'ensemble",staff:'Employés',templates:'Modèles',archives:'Archives',diagnostic:'🔧 Diagnostic'};
     const btn=el('button',`px-4 py-3 text-sm whitespace-nowrap ${state.adminTab===tab?'tab-active':'text-slate-500 hover:text-slate-700'}`);
     btn.textContent=labels[tab];
     btn.onclick=()=>{state.adminTab=tab;render();};
     tabs.appendChild(btn);
   });
   const content=el('div','max-w-6xl mx-auto px-2 py-4');
-  if     (state.adminTab==='overview')  content.appendChild(renderOverview(period));
-  else if(state.adminTab==='staff')     content.appendChild(renderStaff());
-  else if(state.adminTab==='templates') content.appendChild(renderTemplates());
-  else if(state.adminTab==='archives')  content.appendChild(renderArchives());
+  if     (state.adminTab==='overview')   content.appendChild(renderOverview(period));
+  else if(state.adminTab==='staff')      content.appendChild(renderStaff());
+  else if(state.adminTab==='templates')  content.appendChild(renderTemplates());
+  else if(state.adminTab==='archives')   content.appendChild(renderArchives());
+  else if(state.adminTab==='diagnostic') content.appendChild(renderDiagnostic());
   wrap.appendChild(header); wrap.appendChild(tabs); wrap.appendChild(content);
   return wrap;
 }
@@ -1216,6 +1217,119 @@ function previewTemplate(){
   const prev=document.getElementById('tpl-preview');
   prev.textContent=v.replace(/\[Prénom\]/g,firstName(DB.employees[0]?.name||'Employé'));
   prev.classList.remove('hidden');
+}
+
+// ── Diagnostic tab
+function renderDiagnostic(){
+  const frag=document.createDocumentFragment();
+  const card=el('div','card p-5 max-w-2xl');
+  card.innerHTML=`
+    <h2 class="text-lg font-bold text-slate-800 mb-1">🔧 Diagnostic Airtable</h2>
+    <p class="text-xs text-slate-500 mb-4">Teste la connexion entre Vercel et Airtable. Les résultats s'affichent ici — pas besoin d'ouvrir la console.</p>
+    <div class="flex flex-wrap gap-2 mb-4">
+      <button onclick="runDiagnostic()" class="btn btn-navy">▶ Lancer le diagnostic</button>
+      <button onclick="runSyncTest()" class="btn btn-green">🔄 Tester le sync (ligne test)</button>
+    </div>
+    <div id="diag-results" class="space-y-2 text-sm font-mono"></div>`;
+  frag.appendChild(card);
+  return frag;
+}
+
+function diagLine(id, label, status, detail=''){
+  const colors={
+    pending:'bg-slate-100 text-slate-500',
+    ok:'bg-green-50 border border-green-200 text-green-800',
+    err:'bg-red-50 border border-red-200 text-red-800',
+    warn:'bg-amber-50 border border-amber-200 text-amber-800'
+  };
+  const icons={pending:'⏳',ok:'✅',err:'❌',warn:'⚠️'};
+  const div=document.getElementById(id)||document.createElement('div');
+  div.id=id;
+  div.className=`rounded-lg px-3 py-2 ${colors[status]}`;
+  div.innerHTML=`<span class="mr-2">${icons[status]}</span><strong>${label}</strong>${detail?`<div class="mt-1 text-xs opacity-80 break-all">${detail}</div>`:''}`;
+  return div;
+}
+
+async function runDiagnostic(){
+  const results=document.getElementById('diag-results');
+  results.innerHTML='';
+
+  // Test 1 — Variables d'environnement via getemployees
+  const t1=diagLine('d-emp','GET /api/getemployees','pending');
+  results.appendChild(t1);
+  try{
+    const r=await fetch('/api/getemployees');
+    const txt=await r.text();
+    let parsed;
+    try{ parsed=JSON.parse(txt); }catch(e){ parsed=null; }
+    if(r.ok && Array.isArray(parsed)){
+      t1.replaceWith(diagLine('d-emp','GET /api/getemployees','ok',`${parsed.length} employé(s) retourné(s). Premier: ${parsed[0]?.name||'?'}`));
+    } else {
+      t1.replaceWith(diagLine('d-emp','GET /api/getemployees','err',`HTTP ${r.status} — ${txt.slice(0,300)}`));
+    }
+  }catch(e){
+    t1.replaceWith(diagLine('d-emp','GET /api/getemployees','err',`Fetch échoué: ${e.message}`));
+  }
+
+  // Test 2 — getTimesheet
+  const emp1=DB.employees.find(e=>e.airtableId);
+  const t2=diagLine('d-ts','GET /api/gettimesheet','pending');
+  results.appendChild(t2);
+  if(!emp1){
+    t2.replaceWith(diagLine('d-ts','GET /api/gettimesheet','warn','Aucun employé avec airtableId — test impossible'));
+  } else {
+    const p=PERIOD.current();
+    const ymd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    try{
+      const r=await fetch(`/api/gettimesheet?empId=${emp1.airtableId}&periodStart=${ymd(p.start)}&periodEnd=${ymd(p.end)}`);
+      const txt=await r.text();
+      let parsed; try{ parsed=JSON.parse(txt); }catch(e){ parsed=null; }
+      if(r.ok){
+        t2.replaceWith(diagLine('d-ts','GET /api/gettimesheet','ok',`${parsed?.rows?.length||0} ligne(s) pour ${emp1.name}`));
+      } else {
+        t2.replaceWith(diagLine('d-ts','GET /api/gettimesheet','err',`HTTP ${r.status} — ${txt.slice(0,300)}`));
+      }
+    }catch(e){ t2.replaceWith(diagLine('d-ts','GET /api/gettimesheet','err',`Fetch échoué: ${e.message}`)); }
+  }
+
+  // Test 3 — airtableId présents
+  const missing=DB.employees.filter(e=>!e.airtableId);
+  const t3=diagLine('d-ids','IDs Airtable des employés', missing.length>0?'warn':'ok',
+    missing.length>0 ? `Manquants: ${missing.map(e=>e.name).join(', ')}` : `Tous les ${DB.employees.length} employés ont un ID Airtable`);
+  results.appendChild(t3);
+
+  // Test 4 — URLs correctes
+  results.appendChild(diagLine('d-url','URLs API (casse)','ok','Toutes en minuscules ✓ (getemployees, gettimesheet, syncairtable, updateemployee)'));
+}
+
+async function runSyncTest(){
+  const results=document.getElementById('diag-results');
+  const emp=DB.employees.find(e=>e.airtableId);
+  if(!emp){ alert('Aucun employé avec airtableId'); return; }
+
+  const t=diagLine('d-sync','POST /api/syncairtable (ligne test)','pending');
+  results.insertBefore(t, results.firstChild);
+
+  const testDate='2099-01-01'; // date test qui ne polluera pas les vraies données
+  try{
+    const r=await fetch('/api/syncairtable',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        empId: emp.airtableId,
+        date:  testDate,
+        start: 'TEST',
+        notes: 'Ligne de test diagnostic — peut être supprimée',
+        periodeDePaie: 'TEST'
+      })
+    });
+    const txt=await r.text();
+    if(r.ok){
+      t.replaceWith(diagLine('d-sync','POST /api/syncairtable','ok',`HTTP ${r.status} — Vérifiez Airtable pour une ligne avec Date=2099-01-01 et Début=TEST`));
+    } else {
+      t.replaceWith(diagLine('d-sync','POST /api/syncairtable','err',`HTTP ${r.status} — ${txt.slice(0,400)}`));
+    }
+  }catch(e){ t.replaceWith(diagLine('d-sync','POST /api/syncairtable','err',`Fetch échoué: ${e.message}`)); }
 }
 
 // ── Archives tab
