@@ -233,7 +233,7 @@ function liveCalc(eid,pk,idx,field,val){
   const sheetTimerKey = `${eid}-${pk}`;
   clearTimeout(_syncTimers[sheetTimerKey]);
   _syncTimers[sheetTimerKey] = setTimeout(() => {
-    syncFullSheetToAirtable(eid, pk);
+    syncFullSheetSafe(eid, pk);
   }, 1500);
 }
 
@@ -702,7 +702,7 @@ function quickFill(empId,periodKey,rowIdx,value){
   if(!DB.timesheets[key]) return;
   DB.timesheets[key].rows[rowIdx].notes=value;
   save();
-  syncFullSheetToAirtable(empId, periodKey); // sync feuille complete vers Airtable
+  syncFullSheetSafe(empId, periodKey); // sync feuille complete vers Airtable
   render();
 }
 
@@ -716,7 +716,7 @@ function saveAdminNote(empId,periodKey,rowIdx,value){
   const timerKey=`adminnote-${empId}-${rowIdx}`;
   clearTimeout(_adminNoteTimers[timerKey]);
   _adminNoteTimers[timerKey]=setTimeout(()=>{
-    syncFullSheetToAirtable(empId, periodKey);
+    syncFullSheetSafe(empId, periodKey);
   }, 1500);
 }
 
@@ -740,7 +740,7 @@ function copyYesterday(empId,periodKey){
   },0);
   sheet.totalMinutes=gt;
   save();
-  syncFullSheetToAirtable(empId, periodKey); // sync vers Airtable apres copie
+  syncFullSheetSafe(empId, periodKey); // sync vers Airtable apres copie
   render();
 }
 
@@ -862,7 +862,24 @@ function setInputMode(mode){
   syncEmpPrefsToAirtable(emp.id); // persist vers Airtable
 }
 
-function changeEmpPassword(){
+// Verrou frontend par feuille — fonctionne car JS est mono-thread
+const _sheetSyncLock = {};
+
+async function syncFullSheetSafe(eid, pk){
+  const lockKey = `${eid}_${pk}`;
+  if(_sheetSyncLock[lockKey]){
+    // Une sync est déjà en cours — marquer "à refaire" et sortir
+    _sheetSyncLock[lockKey] = 'pending';
+    return;
+  }
+  _sheetSyncLock[lockKey] = 'running';
+  await syncFullSheetToAirtable(eid, pk);
+  const wasPending = _sheetSyncLock[lockKey] === 'pending';
+  delete _sheetSyncLock[lockKey];
+  if(wasPending) await syncFullSheetSafe(eid, pk); // relancer si des changements ont eu lieu pendant
+}
+
+async function changeEmpPassword(){
   const emp=currentEmp();
   const cur=document.getElementById('ep-current').value;
   const nw=document.getElementById('ep-new').value;
@@ -874,11 +891,11 @@ function changeEmpPassword(){
   emp.password=nw;
   const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
   save();
-  syncEmpPrefsToAirtable(emp.id, true);
-  alert('Mot de passe changé!'); render();
+  await syncEmpPrefsToAirtable(emp.id, true); // await = attend la réponse avant de continuer
+  render();
 }
 
-function createEmpPassword(){
+async function createEmpPassword(){
   const emp=currentEmp();
   const nw=document.getElementById('ep-new').value;
   const cf=document.getElementById('ep-confirm').value;
@@ -888,8 +905,8 @@ function createEmpPassword(){
   emp.password=nw;
   const dbEmp=DB.employees.find(e=>e.id===emp.id); if(dbEmp) dbEmp.password=nw;
   save();
-  syncEmpPrefsToAirtable(emp.id, true);
-  alert('Mot de passe créé! Il sera demandé à la prochaine connexion.'); render();
+  await syncEmpPrefsToAirtable(emp.id, true); // await = attend la réponse avant de continuer
+  render();
 }
 
 // ================================================================
