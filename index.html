@@ -432,9 +432,17 @@ async function finishEmpLogin(emp){
   state.view='employee';
   state.loginPendingEmpId=null;
   checkPeriodReset();
-  // Afficher immediatement avec donnees locales (cache)
   render();
-  // Puis synchroniser depuis Airtable en arriere-plan
+  if(!emp.airtableId){
+    showToast('⚠️ Compte non lié à Airtable — vos heures resteront locales uniquement!', 'err');
+    setSyncStatus('noid');
+    return;
+  }
+  // Si mot de passe local mais absent dans Airtable → sync automatique (migration)
+  if(emp.password && !emp._pwSynced){
+    emp._pwSynced=true;
+    syncEmpPrefsToAirtable(emp.id);
+  }
   await loadSheetFromAirtable(emp);
 }
 
