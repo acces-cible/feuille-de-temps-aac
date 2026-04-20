@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     if (recordId) {
       await axios.patch(`${baseUrl}/${recordId}`, { fields }, { headers });
       console.log(`PATCH direct OK: ${recordId} / ${date}`);
-      return res.status(200).json({ message: 'OK' });
+      return res.status(200).json({ message: 'OK', recordId });
     }
 
     // ── Sinon → chercher par date + employé, puis PATCH ou POST
@@ -82,6 +82,7 @@ export default async function handler(req, res) {
     if (existingRecord) {
       await axios.patch(`${baseUrl}/${existingRecord.id}`, { fields }, { headers });
       console.log(`PATCH OK: ${existingRecord.id}`);
+      return res.status(200).json({ message: 'OK', recordId: existingRecord.id });
     } else {
       const hasContent = (body.start && body.start !== '')
                       || (body.end   && body.end   !== '')
@@ -90,14 +91,15 @@ export default async function handler(req, res) {
                       || approved !== undefined;
 
       if (hasContent) {
-        await axios.post(baseUrl, { fields }, { headers });
-        console.log(`POST OK: nouvelle ligne ${date}`);
+        const created = await axios.post(baseUrl, { fields }, { headers });
+        const newId = created.data?.id;
+        console.log(`POST OK: nouvelle ligne ${date} → ${newId}`);
+        return res.status(200).json({ message: 'OK', recordId: newId });
       } else {
         console.log('Skip: aucune donnée');
+        return res.status(200).json({ message: 'OK' });
       }
     }
-
-    return res.status(200).json({ message: 'OK' });
 
   } catch (error) {
     const detail = error.response ? JSON.stringify(error.response.data) : error.message;
