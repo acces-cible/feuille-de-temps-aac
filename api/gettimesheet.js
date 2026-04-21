@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-// GET /api/getTimesheet?empId=recXXXX&periodStart=2026-04-06&periodEnd=2026-04-19
+// GET /api/gettimesheet?empId=recXXXX&periodStart=2026-04-06&periodEnd=2026-04-19
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -20,6 +20,7 @@ export default async function handler(req, res) {
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
   try {
+    // Pagination complète
     let allRecords = [];
     let offset = null;
     do {
@@ -28,6 +29,7 @@ export default async function handler(req, res) {
       allRecords = allRecords.concat(response.data.records);
       offset = response.data.offset || null;
     } while (offset);
+
     console.log(`Total lignes: ${allRecords.length}`);
 
     const empRecords = allRecords.filter(r => {
@@ -38,7 +40,22 @@ export default async function handler(req, res) {
 
     console.log(`Lignes pour ${empId}: ${empRecords.length}`);
 
-    const rows = empRecords.map(r => ({
+    // Dédupliquer par date: garder l'enregistrement avec le plus de données
+    const byDate = {};
+    empRecords.forEach(r => {
+      const date = r.fields['Date'] || '';
+      if (!byDate[date]) {
+        byDate[date] = r;
+      } else {
+        const prev = byDate[date];
+        const prevScore = ['Début','Fin','Dîner','Notes'].filter(k => prev.fields[k]).length;
+        const curScore  = ['Début','Fin','Dîner','Notes'].filter(k => r.fields[k]).length;
+        if (curScore > prevScore) byDate[date] = r;
+      }
+    });
+
+    const rows = Object.values(byDate).map(r => ({
+      airtableRecordId: r.id,
       date:      r.fields['Date']       || '',
       start:     r.fields['Début']      || '',
       end:       r.fields['Fin']        || '',
