@@ -1100,7 +1100,7 @@ async function sendReminder(empId) {
   };
 
   try {
-    const response = await fetch('/api/syncAirtable', {
+    const response = await fetch('/api/syncairtable', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -1130,7 +1130,7 @@ async function remindAll(periodKey){
     emp.reminderCount++;
     if(emp.airtableId){
       try{
-        const resp=await fetch('/api/syncAirtable',{
+        const resp=await fetch('/api/syncairtable',{
           method:'POST',
           body:JSON.stringify({empId:emp.airtableId,date:today,'Envoyer Rappel':true})
         });
@@ -1706,7 +1706,7 @@ async function syncFullSheetToAirtable(eid, pk){
       periodeDePaie: periodLabel
     };
     try{
-      const resp = await fetch('/api/syncAirtable',{
+      const resp = await fetch('/api/syncairtable',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify(data)
@@ -1756,7 +1756,7 @@ async function syncRowToAirtable(eid, pk, idx){
   };
 
   try {
-    const resp = await fetch('/api/syncAirtable', {
+    const resp = await fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1800,7 +1800,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       lunch: row.lunch || '',
       notes: row.notes || ''
     };
-    return fetch('/api/syncAirtable', {
+    return fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1820,7 +1820,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       lunch: row.lunch || '',
       notes: row.notes || ''
     };
-    return fetch('/api/syncAirtable', {
+    return fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1854,7 +1854,7 @@ async function init(){
   renderLoading('Chargement des employés…');
 
   try {
-    const resp = await fetch('/api/getEmployees');
+    const resp = await fetch('/api/getemployees');
     if(resp.ok){
       const apiEmployees = await resp.json();
 
