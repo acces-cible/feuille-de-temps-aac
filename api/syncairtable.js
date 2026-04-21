@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-// POST /api/syncAirtable
+// POST /api/syncairtable
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   const body = req.body;
   const { empId, date } = body;
 
-  console.log('=== syncAirtable ===', { empId, date, start: body.start, end: body.end });
+  console.log('=== syncAirtable ===', { empId, date, recordId: body.recordId, start: body.start, end: body.end });
 
   if (!empId || !date) {
     return res.status(400).json({ error: 'empId et date requis' });
@@ -32,46 +32,53 @@ export default async function handler(req, res) {
   };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
+  // Construire les champs
+  const fields = {};
+  fields["Employé"] = [empId];
+  fields["Date"]    = date;
+
+  if (body.start     !== undefined && body.start     !== '') fields["Début"]           = body.start.toString();
+  if (body.end       !== undefined && body.end       !== '') fields["Fin"]             = body.end.toString();
+  if (body.lunch     !== undefined && body.lunch     !== '') fields["Dîner"]           = body.lunch.toString();
+  if (body.notes     !== undefined)                          fields["Notes"]           = body.notes;
+  if (body.adminNote !== undefined)                          fields["Note Admin"]      = body.adminNote;
+  if (periode        !== undefined && periode        !== '') fields["Période de paie"] = periode;
+  if (approved       !== undefined)                          fields["Approuvé"]        = approved;
+  if (sendRem        !== undefined)                          fields["Envoyer Rappel"]  = sendRem;
+
+  console.log('Champs:', JSON.stringify(fields));
+
   try {
-    // Chercher la ligne existante pour cet employé et cette date
-    const filter = `AND(DATESTR({Date})='${date}',SEARCH('${empId}',ARRAYJOIN({Employé})))`;
+    // Si l'ID de l'enregistrement est connu, PATCH direct — pas de recherche
+    if (body.recordId) {
+      await axios.patch(`${baseUrl}/${body.recordId}`, { fields }, { headers });
+      console.log(`PATCH direct OK: ${body.recordId}`);
+      return res.status(200).json({ message: 'OK', recordId: body.recordId });
+    }
+
+    // Sinon, chercher par date + employé (premier sync ou migration)
+    const filter = `AND({Date}='${date}',SEARCH('${empId}',ARRAYJOIN({Employé})))`;
     const searchRes = await axios.get(
       `${baseUrl}?filterByFormula=${encodeURIComponent(filter)}`,
       { headers }
     );
 
     const empRecords = searchRes.data.records;
+    console.log(`Lignes trouvées pour ${empId} / ${date}: ${empRecords.length}`);
 
-    console.log(`Lignes pour ${empId} / ${date}: ${empRecords.length}`);
-
-    // Déduplication
+    // Déduplication: supprimer les doublons
     if (empRecords.length > 1) {
       const extras = empRecords.slice(1);
       await Promise.all(extras.map(r => axios.delete(`${baseUrl}/${r.id}`, { headers })));
-      console.log(`Dédupliqué: ${extras.length} doublon(s)`);
+      console.log(`Dédupliqué: ${extras.length} doublon(s) supprimé(s)`);
     }
 
     const existingRecord = empRecords[0] || null;
 
-    // Construire les champs
-    const fields = {};
-    fields["Employé"] = [empId];
-    fields["Date"]    = date;
-
-    if (body.start     !== undefined && body.start     !== '') fields["Début"]           = body.start.toString();
-    if (body.end       !== undefined && body.end       !== '') fields["Fin"]             = body.end.toString();
-    if (body.lunch     !== undefined && body.lunch     !== '') fields["Dîner"]           = body.lunch.toString();
-    if (body.notes     !== undefined)                          fields["Notes"]           = body.notes;
-    if (body.adminNote !== undefined)                          fields["Note Admin"]      = body.adminNote;
-    if (periode        !== undefined && periode        !== '') fields["Période de paie"] = periode;
-    if (approved       !== undefined)                          fields["Approuvé"]        = approved;
-    if (sendRem        !== undefined)                          fields["Envoyer Rappel"]  = sendRem;
-
-    console.log('Champs:', JSON.stringify(fields));
-
     if (existingRecord) {
       await axios.patch(`${baseUrl}/${existingRecord.id}`, { fields }, { headers });
       console.log(`PATCH OK: ${existingRecord.id}`);
+      return res.status(200).json({ message: 'OK', recordId: existingRecord.id });
     } else {
       const hasContent = (body.start && body.start !== '')
                       || (body.end   && body.end   !== '')
@@ -80,14 +87,14 @@ export default async function handler(req, res) {
                       || approved !== undefined;
 
       if (hasContent) {
-        await axios.post(baseUrl, { fields }, { headers });
-        console.log(`POST OK: nouvelle ligne ${date}`);
+        const created = await axios.post(baseUrl, { fields }, { headers });
+        console.log(`POST OK: nouvelle ligne ${date} → ${created.data.id}`);
+        return res.status(200).json({ message: 'OK', recordId: created.data.id });
       } else {
         console.log('Skip: aucune donnée');
+        return res.status(200).json({ message: 'Skip' });
       }
     }
-
-    return res.status(200).json({ message: 'OK' });
 
   } catch (error) {
     const detail = error.response ? JSON.stringify(error.response.data) : error.message;
