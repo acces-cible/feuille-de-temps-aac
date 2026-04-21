@@ -207,6 +207,7 @@ function toTimeVal(str){
 //  LIVE CALC — updates row total + period total without re-render
 // ================================================================
 const _syncTimers = {}; // debounce timers: key = "eid-idx"
+const _syncLocks  = new Set(); // évite les exécutions parallèles de syncFullSheet
 
 function liveCalc(eid,pk,idx,field,val){
   const sk=`${eid}_${pk}`;
@@ -1685,8 +1686,10 @@ async function syncFullSheetToAirtable(eid, pk){
   const emp = DB.employees.find(e => e.id === eid) || currentEmp();
   if(!emp || !emp.airtableId){ console.log('syncFullSheet: pas airtableId pour', eid); return; }
   const sheetKey = pk ? `${eid}_${pk}` : `${emp.id}_${PERIOD.current().key}`;
+  if(_syncLocks.has(sheetKey)){ console.log('syncFullSheet: déjà en cours, skip', sheetKey); return; }
+  _syncLocks.add(sheetKey);
   const sheet = DB.timesheets[sheetKey];
-  if(!sheet) return;
+  if(!sheet){ _syncLocks.delete(sheetKey); return; }
   const period = PERIOD.current();
   const periodLabel = PERIOD.airtableLabel(period.start, period.end);
 
@@ -1694,26 +1697,30 @@ async function syncFullSheetToAirtable(eid, pk){
   const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
   console.log(`syncFullSheet: ${emp.name} | ${rowsWithData.length} lignes à sync`);
 
-  for(const row of rowsWithData){
-    const data = {
-      empId:         emp.airtableId,
-      date:          row.date,
-      start:         row.start     || '',
-      end:           row.end       || '',
-      lunch:         row.lunch     || '',
-      notes:         row.notes     || '',
-      adminNote:     row.adminNote || '',
-      periodeDePaie: periodLabel
-    };
-    try{
-      const resp = await fetch('/api/syncairtable',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(data)
-      });
-      if(resp.ok) console.log(`  ✅ ${row.date}`);
-      else console.error(`  ❌ ${row.date}:`, resp.status, await resp.text());
-    }catch(e){ console.error(`  ❌ ${row.date}:`, e.message); }
+  try {
+    for(const row of rowsWithData){
+      const data = {
+        empId:         emp.airtableId,
+        date:          row.date,
+        start:         row.start     || '',
+        end:           row.end       || '',
+        lunch:         row.lunch     || '',
+        notes:         row.notes     || '',
+        adminNote:     row.adminNote || '',
+        periodeDePaie: periodLabel
+      };
+      try{
+        const resp = await fetch('/api/syncairtable',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(data)
+        });
+        if(resp.ok) console.log(`  ✅ ${row.date}`);
+        else console.error(`  ❌ ${row.date}:`, resp.status, await resp.text());
+      }catch(e){ console.error(`  ❌ ${row.date}:`, e.message); }
+    }
+  } finally {
+    _syncLocks.delete(sheetKey);
   }
 }
 
