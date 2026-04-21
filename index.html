@@ -1643,9 +1643,12 @@ async function loadSheetFromAirtable(emp, periodOverride){
     let changed=false;
     atRows.forEach(at=>{
       const lr=sheet.rows.find(r=>r.date===at.date); if(!lr) return;
-      if(at.start!==undefined&&at.start!==lr.start){lr.start=at.start;changed=true;}
-      if(at.end!==undefined&&at.end!==lr.end){lr.end=at.end;changed=true;}
-      if(at.lunch!==undefined&&at.lunch!==lr.lunch){lr.lunch=at.lunch;changed=true;}
+      // Cacher l'ID Airtable pour les PATCHs directs futurs
+      if(at.airtableRecordId && lr.airtableRecordId!==at.airtableRecordId){lr.airtableRecordId=at.airtableRecordId;changed=true;}
+      // Ne pas écraser une valeur non-vide avec du vide (doublons Airtable incomplets)
+      if(at.start     && at.start!==lr.start)    {lr.start=at.start;changed=true;}
+      if(at.end       && at.end!==lr.end)        {lr.end=at.end;changed=true;}
+      if(at.lunch     && at.lunch!==lr.lunch)    {lr.lunch=at.lunch;changed=true;}
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
     });
@@ -1697,17 +1700,19 @@ async function syncFullSheetToAirtable(eid, pk){
   const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
   console.log(`syncFullSheet: ${emp.name} | ${rowsWithData.length} lignes à sync`);
 
+  let idsCached = false;
   try {
     for(const row of rowsWithData){
       const data = {
-        empId:         emp.airtableId,
-        date:          row.date,
-        start:         row.start     || '',
-        end:           row.end       || '',
-        lunch:         row.lunch     || '',
-        notes:         row.notes     || '',
-        adminNote:     row.adminNote || '',
-        periodeDePaie: periodLabel
+        empId:           emp.airtableId,
+        date:            row.date,
+        start:           row.start     || '',
+        end:             row.end       || '',
+        lunch:           row.lunch     || '',
+        notes:           row.notes     || '',
+        adminNote:       row.adminNote || '',
+        periodeDePaie:   periodLabel,
+        recordId:        row.airtableRecordId || undefined
       };
       try{
         const resp = await fetch('/api/syncairtable',{
@@ -1715,10 +1720,17 @@ async function syncFullSheetToAirtable(eid, pk){
           headers:{'Content-Type':'application/json'},
           body: JSON.stringify(data)
         });
-        if(resp.ok) console.log(`  ✅ ${row.date}`);
-        else console.error(`  ❌ ${row.date}:`, resp.status, await resp.text());
+        if(resp.ok){
+          const json = await resp.json();
+          if(json.recordId && !row.airtableRecordId){
+            row.airtableRecordId = json.recordId;
+            idsCached = true;
+          }
+          console.log(`  ✅ ${row.date} (${json.recordId})`);
+        } else { console.error(`  ❌ ${row.date}:`, resp.status, await resp.text()); }
       }catch(e){ console.error(`  ❌ ${row.date}:`, e.message); }
     }
+    if(idsCached) save();
   } finally {
     _syncLocks.delete(sheetKey);
   }
