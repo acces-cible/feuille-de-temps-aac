@@ -1,6 +1,5 @@
 const axios = require('axios');
 
-// POST /api/updateEmployee
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -22,10 +21,10 @@ export default async function handler(req, res) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}/${airtableId}`;
 
   const fields = {};
-  if (body.inputMode  !== undefined) fields['Mode saisie']   = body.inputMode;
-  if (body.autoFill   !== undefined) fields['AutoFill']      = body.autoFill;
-  if (body.partTime   !== undefined) fields['Temps partiel'] = body.partTime;
-  if (body.password   !== undefined) fields['Mot de passe']  = body.password || '';
+  if (body.inputMode !== undefined) fields['Mode saisie']   = body.inputMode;
+  if (body.autoFill  !== undefined) fields['AutoFill']      = body.autoFill;
+  if (body.partTime  !== undefined) fields['Temps partiel'] = body.partTime;
+  if (body.password  !== undefined) fields['Mot de passe']  = body.password ?? '';
 
   if (Object.keys(fields).length === 0) {
     return res.status(200).json({ message: 'Rien à mettre à jour' });
