@@ -1633,7 +1633,7 @@ async function loadSheetFromAirtable(emp, periodOverride){
   const ps=ymd(period.start), pe=ymd(period.end);
   console.log(`loadSheet: ${emp.name} | ${ps} → ${pe}`);
   try{
-    const resp=await fetch(`/api/getTimesheet?empId=${encodeURIComponent(emp.airtableId)}&periodStart=${ps}&periodEnd=${pe}`);
+    const resp=await fetch(`/api/gettimesheet?empId=${encodeURIComponent(emp.airtableId)}&periodStart=${ps}&periodEnd=${pe}`);
     if(!resp.ok){ console.warn('getTimesheet status:', resp.status, await resp.text()); return; }
     const json=await resp.json();
     const atRows=json.rows||[];
