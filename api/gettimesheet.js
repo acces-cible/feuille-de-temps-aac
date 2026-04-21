@@ -1,29 +1,7 @@
 const axios = require('axios');
 
-// Domaines autorisés — ajoutez votre URL Vercel ici
-const ALLOWED_ORIGINS = [
-  'https://feuille-de-temps-aac.vercel.app',
-  'https://feuille-de-temps-aac-git-main-acces-cible.vercel.app',
-  // Ajoutez votre domaine custom ici si vous en avez un
-];
-
-function setCORS(req, res) {
-  const origin = req.headers.origin || '';
-  // Autoriser aussi les previews Vercel (*.vercel.app)
-  const allowed = ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app');
-  if (allowed) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  return allowed;
-}
-
 // GET /api/getTimesheet?empId=recXXXX&periodStart=2026-04-06&periodEnd=2026-04-19
 export default async function handler(req, res) {
-  // OPTIONS preflight
-  setCORS(req, res);
-  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -42,12 +20,14 @@ export default async function handler(req, res) {
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
   try {
-    const response = await axios.get(
-      `${baseUrl}?pageSize=100`,
-      { headers }
-    );
-
-    const allRecords = response.data.records;
+    let allRecords = [];
+    let offset = null;
+    do {
+      const url = offset ? `${baseUrl}?pageSize=100&offset=${offset}` : `${baseUrl}?pageSize=100`;
+      const response = await axios.get(url, { headers });
+      allRecords = allRecords.concat(response.data.records);
+      offset = response.data.offset || null;
+    } while (offset);
     console.log(`Total lignes: ${allRecords.length}`);
 
     const empRecords = allRecords.filter(r => {
