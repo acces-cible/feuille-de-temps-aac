@@ -1137,7 +1137,7 @@ function renderOverview(period){
   const actions=el('div','mb-4 flex flex-wrap gap-2');
   actions.innerHTML=`
     <button onclick="approveAll('${period.key}')" class="btn btn-green">✓✓ Approuver tous</button>
-    <button onclick="remindAll('${period.key}')" class="btn btn-orange">📣 Rappeler tous (0h)</button>`;
+    <button onclick="remindAll()" class="btn btn-orange">📣 Rappeler tous</button>`;
   frag.appendChild(actions);
 
   sheets.forEach(({emp,sheet})=>{
@@ -1161,7 +1161,7 @@ function renderOverview(period){
         ${sheet?.approved
           ?`<span class="badge-approved">✓ Approuvé</span><button onclick="unlockSheet('${emp.id}','${period.key}')" class="btn btn-gray text-xs">🔓 Déverrouiller</button>`
           :`<span class="badge-pending">En attente</span><button onclick="approveSheet('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button>`}
-        <button onclick="sendReminder('${emp.id}')" class="btn btn-blue text-xs">⏰ Rappel (${emp.reminderCount})</button>
+        <button onclick="sendReminder('${emp.id}')" class="btn btn-blue text-xs">⏰ Rappel</button>
         ${isZero?`<span class="text-xs ${emp.partTime?'text-purple-600':'text-red-600'} font-semibold">⚠ 0h</span>`:''}
       </div>`;
     card.appendChild(ch);
@@ -1216,23 +1216,34 @@ async function sendReminder(empId) {
     alert("Erreur : ID Airtable manquant pour cet employé.");
     return;
   }
-  emp.reminderCount++;
-  save();
-  await syncEmpPrefsToAirtable(emp.id);
-  render();
-}
-async function remindAll(periodKey){
-  const toRemind = DB.employees.filter(emp => {
-    const tot = calcSheetTotal(DB.timesheets[`${emp.id}_${periodKey}`]);
-    return tot === 0 && emp.airtableId;
-  });
-  if(toRemind.length === 0){ alert('Tous les employés ont déjà saisi des heures.'); return; }
-  for(const emp of toRemind){
-    emp.reminderCount++;
+  try {
+    const resp = await fetch('/api/updateemployee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ airtableId: emp.airtableId, sendReminder: true })
+    });
+    if (!resp.ok) alert("Erreur lors de l'envoi du rappel.");
+  } catch(e) {
+    alert("Erreur de connexion.");
   }
-  save();
-  await Promise.all(toRemind.map(emp => syncEmpPrefsToAirtable(emp.id)));
-  alert(`${toRemind.length} rappel(s) envoyé(s) !`);
+}
+
+async function remindAll(){
+  const toRemind = DB.employees.filter(e => e.airtableId);
+  if(toRemind.length === 0){ alert('Aucun employé avec un ID Airtable.'); return; }
+  let sent = 0, errors = 0;
+  for(const emp of toRemind){
+    try{
+      const resp = await fetch('/api/updateemployee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ airtableId: emp.airtableId, sendReminder: true })
+      });
+      if(resp.ok) sent++; else errors++;
+    } catch(e){ errors++; }
+  }
+  if(errors > 0) alert(`Rappels envoyés: ${sent}. Erreurs: ${errors}.`);
+  else alert(`${sent} rappel(s) envoyé(s) !`);
   render();
 }
 
