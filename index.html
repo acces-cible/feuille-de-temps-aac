@@ -310,6 +310,8 @@ let state = {
   addEmpForm:{name:'',email:'',phone:'',partTime:false},
   conflictResolutions:{}, bulkOverwrite:false,
   loginPendingEmpId:null,
+  empTab:'current',        // 'current' | 'history'
+  empHistoryPeriod:null,   // period key selected in history
 };
 const _archiveLoadedPeriods = new Set();
 
@@ -463,6 +465,8 @@ function checkPeriodReset(){
     DB.periodReminderResets[p.key]=true;
     DB.employees.forEach(e=>{e.reminderCount=0;});
     save();
+    // Sync le reset vers Airtable pour tous les employés
+    DB.employees.forEach(e=>{ if(e.airtableId) syncEmpPrefsToAirtable(e.id); });
   }
 }
 
@@ -495,6 +499,23 @@ function renderEmployee(){
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
+
+  // Tabs
+  const tabs=el('div','bg-white border-b flex gap-0 px-2');
+  [['current','📋 Période courante'],['history','🕐 Historique']].forEach(([key,label])=>{
+    const btn=el('button',`px-4 py-3 text-sm whitespace-nowrap ${state.empTab===key?'tab-active':'text-slate-500 hover:text-slate-700'}`);
+    btn.textContent=label;
+    btn.onclick=()=>{state.empTab=key;render();};
+    tabs.appendChild(btn);
+  });
+
+  wrap.appendChild(header);
+  wrap.appendChild(tabs);
+
+  if(state.empTab==='history'){
+    wrap.appendChild(renderEmpHistory(emp));
+    return wrap;
+  }
 
   let reminderHtml='';
   if(emp.reminderCount>0)
@@ -530,12 +551,118 @@ function renderEmployee(){
       ${sheet.approved?'Approuvé · Contactez l\'admin pour modifier':'Sauvegarde automatique'}
     </div>`;
 
-  wrap.appendChild(header);
   wrap.appendChild(content);
   wrap.appendChild(banner);
   return wrap;
 }
 
+// ── Employee History tab (read-only)
+function renderEmpHistory(emp){
+  const content=el('div','max-w-5xl mx-auto px-3 py-4 pb-10');
+
+  const periods=PERIOD.list(24).slice(1);
+  const periodsWithData=periods.filter(p=>{
+    const sheet=DB.timesheets[`${emp.id}_${p.key}`];
+    return sheet && (calcSheetTotal(sheet)>0 || sheet.approved);
+  });
+
+  if(periodsWithData.length===0){
+    content.innerHTML=`<div class="card p-8 text-center text-slate-400">
+      <div class="text-4xl mb-3">📭</div>
+      <div class="font-medium">Aucun historique disponible</div>
+      <div class="text-sm mt-1">Les périodes complétées apparaîtront ici.</div>
+    </div>`;
+    return content;
+  }
+
+  if(!state.empHistoryPeriod || !periodsWithData.find(p=>p.key===state.empHistoryPeriod)){
+    state.empHistoryPeriod=periodsWithData[0].key;
+  }
+
+  const selWrap=el('div','mb-4');
+  const sel=document.createElement('select');
+  sel.className='w-full sm:w-auto';
+  periodsWithData.forEach(p=>{
+    const opt=document.createElement('option');
+    opt.value=p.key;
+    opt.textContent=PERIOD.label(p.start,p.end);
+    if(p.key===state.empHistoryPeriod) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  sel.onchange=()=>{state.empHistoryPeriod=sel.value;render();};
+  selWrap.appendChild(sel);
+  content.appendChild(selWrap);
+
+  const selPeriod=periodsWithData.find(p=>p.key===state.empHistoryPeriod);
+  if(!selPeriod) return content;
+
+  const sheet=DB.timesheets[`${emp.id}_${selPeriod.key}`];
+  const tot=calcSheetTotal(sheet);
+
+  const info=el('div','card px-4 py-3 mb-4 flex items-center justify-between');
+  info.innerHTML=`
+    <div class="flex items-center gap-3">
+      <span class="text-slate-500 text-sm">Total</span>
+      <span class="mono font-bold text-xl text-blue-900">${fmtMins(tot)}</span>
+    </div>
+    <div>${sheet.approved
+      ?`<span class="badge-approved">✓ Approuvé</span>`
+      :`<span class="badge-pending">En attente</span>`}
+    </div>`;
+  content.appendChild(info);
+
+  const deskWrap=el('div','desktop-only card overflow-x-auto mb-4');
+  const table=document.createElement('table');
+  table.innerHTML=`<thead><tr class="nav-navy">
+    <th class="text-left pl-3" style="min-width:130px">Journée</th>
+    <th style="min-width:82px">Début</th>
+    <th style="min-width:82px">Dîner</th>
+    <th style="min-width:82px">Fin</th>
+    <th style="min-width:80px">Total</th>
+    <th style="min-width:220px">Notes</th>
+  </tr></thead>`;
+  const tbody=document.createElement('tbody');
+  sheet.rows.forEach(row=>{
+    const d=new Date(row.date+'T00:00:00');
+    const tr=document.createElement('tr');
+    tr.className=isWeekend(d)?'bg-weekend':'bg-day';
+    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch));
+    tr.innerHTML=`
+      <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
+      <td class="mono text-sm">${row.start||'—'}</td>
+      <td class="mono text-sm">${row.lunch||'—'}</td>
+      <td class="mono text-sm">${row.end||'—'}</td>
+      <td class="total-cell">${worked!==null?fmtMins(worked):'—'}</td>
+      <td class="text-xs text-slate-600">${row.notes||''}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  deskWrap.appendChild(table);
+  content.appendChild(deskWrap);
+
+  const mobWrap=el('div','mobile-only');
+  sheet.rows.forEach(row=>{
+    const d=new Date(row.date+'T00:00:00');
+    const weekend=isWeekend(d);
+    const card=el('div',`mobile-day-card ${weekend?'weekend':'weekday'}`);
+    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch));
+    card.innerHTML=`<div class="px-4 py-3">
+      <div class="flex items-center justify-between mb-1">
+        <div class="font-semibold text-slate-700 capitalize text-sm">${dayLabelLong(d)}</div>
+        <div class="mono font-bold text-blue-900">${worked!==null?fmtMins(worked):'—'}</div>
+      </div>
+      <div class="flex gap-4 text-sm text-slate-500">
+        ${row.start?`<span>${row.start}</span><span>→</span><span>${row.end||'—'}</span>`:'<span class="italic text-slate-300">Aucune entrée</span>'}
+        ${row.lunch?`<span class="text-slate-400">🍽 ${row.lunch}</span>`:''}
+      </div>
+      ${row.notes?`<div class="text-xs text-slate-400 mt-1">📝 ${row.notes}</div>`:''}
+    </div>`;
+    mobWrap.appendChild(card);
+  });
+  content.appendChild(mobWrap);
+
+  return content;
+}
 // ── Desktop table (Journée | Début | Dîner | Fin | Total | Notes | [Note admin])
 function buildDesktopTable(sheet,isAdmin,empId,period){
   const table=document.createElement('table');
@@ -1858,7 +1985,11 @@ async function init(){
           partTime:      apiEmp.partTime      ?? local?.partTime      ?? false,
           inputMode:     apiEmp.inputMode     || local?.inputMode     || 'clock',
           autoFill:      apiEmp.autoFill      ?? local?.autoFill      ?? false,
-          reminderCount: apiEmp.reminderCount ?? local?.reminderCount ?? 0,
+          // Si la période courante a déjà été réinitialisée localement, garder 0
+          // (évite de recharger l'ancien compteur d'une période précédente depuis Airtable)
+          reminderCount: DB.periodReminderResets[PERIOD.current().key]
+            ? (local?.reminderCount ?? 0)
+            : (apiEmp.reminderCount ?? local?.reminderCount ?? 0),
           // Mot de passe: Airtable en priorité, fallback localStorage
           password:      apiEmp.password !== undefined ? apiEmp.password : (local?.password ?? null),
           archived:      local?.archived      ?? false,
