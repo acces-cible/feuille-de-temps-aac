@@ -29,6 +29,7 @@ module.exports = async function handler(req, res) {
   if (body.partTime       !== undefined) fields['Temps partiel']   = body.partTime;
   if (body.password       !== undefined) fields['Mot de passe']    = body.password ?? '';
   if (body.reminderCount  !== undefined) fields['Compteur Rappel'] = body.reminderCount;
+  if (body.reminderCount !== undefined) fields['Compteur Rappel'] = body.reminderCount;
 
   if (Object.keys(fields).length === 0) {
     return res.status(200).json({ message: 'Rien à mettre à jour' });
