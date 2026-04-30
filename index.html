@@ -1084,64 +1084,28 @@ function unlockSheet(empId,periodKey){
 }
 
 async function sendReminder(empId) {
-  // 1. On trouve l'employé dans la base locale pour récupérer son ID Airtable
   const emp = DB.employees.find(e => e.id === empId);
-  
   if (!emp || !emp.airtableId) {
-    alert("Erreur : L'ID Airtable est manquant pour cet employé dans l'onglet Admin.");
+    alert("Erreur : ID Airtable manquant pour cet employé.");
     return;
   }
-
-  const today = localDateStr(); // date locale sans decalage UTC
-  
-  const data = {
-    empId: emp.airtableId, // <-- ON UTILISE LE rec... ET NON LE emp1
-    date: today,
-    "Envoyer Rappel": true 
-  };
-
-  try {
-    const response = await fetch('/api/syncairtable', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-
-    if (response.ok) {
-      alert("Demande de rappel envoyée à Airtable !");
-      emp.reminderCount++;
-      save();
-      syncEmpPrefsToAirtable(emp.id); // persist le nouveau compteur de rappels
-      render();
-    } else {
-      alert("Erreur lors de l'envoi du rappel.");
-    }
-  } catch (e) {
-    alert("Erreur de connexion lors de l'envoi du rappel.");
-  }
+  emp.reminderCount++;
+  save();
+  await syncEmpPrefsToAirtable(emp.id);
+  render();
 }
 async function remindAll(periodKey){
-  const today=localDateStr(); // date locale sans decalage UTC
-  const toRemind=DB.employees.filter(emp=>{
-    const tot=calcSheetTotal(DB.timesheets[`${emp.id}_${periodKey}`]);
-    return tot===0;
+  const toRemind = DB.employees.filter(emp => {
+    const tot = calcSheetTotal(DB.timesheets[`${emp.id}_${periodKey}`]);
+    return tot === 0 && emp.airtableId;
   });
-  if(toRemind.length===0){ alert('Tous les employés ont déjà saisi des heures.'); return; }
-  let sent=0, errors=0;
+  if(toRemind.length === 0){ alert('Tous les employés ont déjà saisi des heures.'); return; }
   for(const emp of toRemind){
     emp.reminderCount++;
-    if(emp.airtableId){
-      try{
-        const resp=await fetch('/api/syncairtable',{
-          method:'POST',
-          body:JSON.stringify({empId:emp.airtableId,date:today,'Envoyer Rappel':true})
-        });
-        if(resp.ok) sent++; else errors++;
-      }catch(e){ errors++; }
-    }
   }
   save();
-  if(errors>0) alert(`Rappels envoyés: ${sent}. Erreurs: ${errors} (vérifiez les IDs Airtable).`);
-  else alert(`${sent} rappel(s) envoyé(s) à Airtable!`);
+  await Promise.all(toRemind.map(emp => syncEmpPrefsToAirtable(emp.id)));
+  alert(`${toRemind.length} rappel(s) envoyé(s) !`);
   render();
 }
 
