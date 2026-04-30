@@ -1222,7 +1222,11 @@ async function sendReminder(empId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ airtableId: emp.airtableId, sendReminder: true })
     });
-    if (!resp.ok) alert("Erreur lors de l'envoi du rappel.");
+    if (resp.ok) {
+      alert(`✅ Rappel envoyé à ${emp.name}.`);
+    } else {
+      alert("Erreur lors de l'envoi du rappel.");
+    }
   } catch(e) {
     alert("Erreur de connexion.");
   }
