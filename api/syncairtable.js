@@ -15,7 +15,6 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'empId et date requis' });
   }
 
-  const sendRem  = body["Envoyer Rappel"];
   const approved = body.approved;
   const periode  = body.periodeDePaie;
 
@@ -43,8 +42,7 @@ module.exports = async function handler(req, res) {
   if (body.notes     !== undefined)                          fields["Notes"]           = body.notes;
   if (body.adminNote !== undefined)                          fields["Note Admin"]      = body.adminNote;
   if (periode        !== undefined && periode        !== '') fields["Période de paie"] = periode;
-  if (approved       !== undefined)                          fields["Approuvé"]        = approved;
-  if (sendRem        !== undefined)                          fields["Envoyer Rappel"]  = sendRem;
+  if (approved       !== undefined)                          fields["Approuvé"]        = approved === true;
 
   console.log('Champs:', JSON.stringify(fields));
 
@@ -56,7 +54,6 @@ module.exports = async function handler(req, res) {
         console.log(`PATCH direct OK: ${body.recordId}`);
         return res.status(200).json({ message: 'OK', recordId: body.recordId });
       } catch (patchErr) {
-        // Si le record a été supprimé (déduplication), tomber en fallback sur la recherche
         if (patchErr.response?.status === 404 || patchErr.response?.status === 422) {
           console.warn(`PATCH ${body.recordId} échoué (${patchErr.response?.status}), fallback recherche`);
         } else {
@@ -95,11 +92,10 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ message: 'OK', recordId: existingRecord.id });
     }
 
+    // Ne créer un nouveau record que si la ligne a vraiment des données
     const hasContent = (body.start && body.start !== '')
                     || (body.end   && body.end   !== '')
-                    || (body.notes && body.notes !== '')
-                    || sendRem  !== undefined
-                    || approved !== undefined;
+                    || (body.notes && body.notes !== '');
 
     if (hasContent) {
       const created = await axios.post(baseUrl, { fields }, { headers });
