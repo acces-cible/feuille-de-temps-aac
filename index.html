@@ -1887,7 +1887,13 @@ async function syncRowToAirtable(eid, pk, idx){
       body: JSON.stringify(data)
     });
     if(resp.ok){
-      console.log(`✅ Airtable sync: ${emp.name} / ${row.date}`);
+      const result = await resp.json();
+      // Sauvegarder le recordId Airtable dans la ligne pour les PATCH directs futurs
+      if(result.recordId && row){
+        row.airtableRecordId = result.recordId;
+        save();
+      }
+      console.log(`✅ Airtable sync: ${emp.name} / ${row.date} → ${result.recordId}`);
     } else {
       const err = await resp.text();
       console.error(`❌ Airtable sync erreur ${resp.status}:`, err);
@@ -1923,12 +1929,18 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       start: row.start || '',
       end:   row.end   || '',
       lunch: row.lunch || '',
-      notes: row.notes || ''
+      notes: row.notes || '',
+      recordId: row.airtableRecordId || undefined
     };
     return fetch('/api/syncairtable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
+    }).then(async resp => {
+      if(resp.ok){
+        const result = await resp.json();
+        if(result.recordId && row) { row.airtableRecordId = result.recordId; }
+      }
     }).catch(e => console.error('syncApproval row error:', e.message));
   });
 
