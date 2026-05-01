@@ -1912,26 +1912,6 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   const periodEnd   = new Date(periodStart); periodEnd.setDate(periodEnd.getDate()+13);
   const periodLabel = PERIOD.airtableLabel(periodStart, periodEnd);
 
-  // Envoyer une requête par ligne qui a des heures (ou toutes si on veut marquer l'approbation)
-  const promises = sheet.rows.map(row => {
-    const data = {
-      empId:         emp.airtableId,
-      date:          row.date,
-      periodeDePaie: periodLabel,
-      approved:      approved,   // true = approuvé, false = déverrouillé
-      // Inclure les heures pour s'assurer que la ligne existe
-      start: row.start || '',
-      end:   row.end   || '',
-      lunch: row.lunch || '',
-      notes: row.notes || ''
-    };
-    return fetch('/api/syncairtable', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }).catch(e => console.error('syncApproval error:', e.message));
-  });
-
   // On n'envoie que les lignes qui ont au moins une heure saisie
   const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes);
   const filteredPromises = rowsWithData.map(row => {
