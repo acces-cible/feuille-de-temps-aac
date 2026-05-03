@@ -81,11 +81,65 @@
   /* ── Responsive */
   @media(max-width:1023px){ .desktop-only{display:none!important;} }
   @media(min-width:1024px){ .mobile-only{display:none!important;} }
+
+  /* ── Toast notifications */
+  #toast-container { position:fixed; top:16px; right:16px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+  .toast { display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:10px; font-size:13px; font-weight:500;
+    box-shadow:0 4px 16px rgba(0,0,0,.15); min-width:220px; max-width:340px; pointer-events:all;
+    animation:toastIn .2s ease; }
+  @keyframes toastIn { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
+  @keyframes toastOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(40px)} }
+  .toast-success { background:#f0fdf4; border:1px solid #86efac; color:#166534; }
+  .toast-error   { background:#fef2f2; border:1px solid #fca5a5; color:#991b1b; }
+  .toast-info    { background:#eff6ff; border:1px solid #93c5fd; color:#1e40af; }
+
+  /* ── Sync spinner */
+  .sync-spinner { width:14px; height:14px; border:2px solid #93c5fd; border-top-color:#2563eb; border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  #sync-indicator { position:fixed; bottom:70px; right:16px; z-index:30; background:white; border:1px solid #e2e8f0;
+    border-radius:20px; padding:5px 12px; font-size:12px; color:#64748b; display:flex; align-items:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.08); transition:opacity .3s; gap:6px; }
+
+  /* ── Subtotal row */
+  .subtotal-row td { background:#f1f5f9; font-weight:600; font-size:12px; color:#475569; border-top:2px solid #cbd5e1; }
 </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
 <div id="app"></div>
+<div id="toast-container"></div>
+<div id="sync-indicator" style="display:none"><div class="sync-spinner"></div><span>Sync…</span></div>
 <script>
+// ================================================================
+//  TOAST & SPINNER
+// ================================================================
+function toast(msg, type='info', duration=3500){
+  const container = document.getElementById('toast-container');
+  if(!container) return;
+  const icons = { success:'✅', error:'❌', info:'ℹ️' };
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+  container.appendChild(t);
+  setTimeout(()=>{
+    t.style.animation = 'toastOut .2s ease forwards';
+    setTimeout(()=>t.remove(), 200);
+  }, duration);
+}
+
+let _syncCount = 0;
+function syncStart(){
+  _syncCount++;
+  const ind = document.getElementById('sync-indicator');
+  if(ind) ind.style.display = 'flex';
+}
+function syncEnd(){
+  _syncCount = Math.max(0, _syncCount - 1);
+  if(_syncCount === 0){
+    const ind = document.getElementById('sync-indicator');
+    if(ind) ind.style.display = 'none';
+  }
+}
+
 // ================================================================
 //  DATA SERVICE — localStorage now, swap .load()/.save() for Airtable later
 // ================================================================
@@ -665,6 +719,7 @@ function renderEmpHistory(emp){
 }
 // ── Desktop table (Journée | Début | Dîner | Fin | Total | Notes | [Note admin])
 function buildDesktopTable(sheet,isAdmin,empId,period){
+  const emp=DB.employees.find(e=>e.id===empId);
   const table=document.createElement('table');
   const adminNoteCol=isAdmin?'<th style="min-width:140px">🔒 Note admin</th>':'';
   table.innerHTML=`<thead><tr class="nav-navy">
@@ -677,6 +732,11 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     ${adminNoteCol}
   </tr></thead>`;
   const tbody=document.createElement('tbody');
+  // Calculer sous-totaux semaines
+  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch));return s+(w||0);},0);
+  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch));return s+(w||0);},0);
+  const adminCols = isAdmin ? 1 : 0;
+
   sheet.rows.forEach((row,i)=>{
     const d=new Date(row.date+'T00:00:00');
     const tr=document.createElement('tr');
@@ -703,7 +763,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         <td><input type="text" class="time-input" placeholder="—" value="${row.start}"
           oninput="liveCalc('${empId}','${period.key}',${i},'start',this.value)"
           onchange="liveCalc('${empId}','${period.key}',${i},'start',this.value)"/></td>
-        <td><input type="text" class="time-input" placeholder="—" value="${row.lunch}"
+        <td><input type="text" class="time-input" placeholder="${emp?.defaultLunch||'—'}" value="${row.lunch}"
           oninput="liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"
           onchange="liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"/></td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.end}"
@@ -721,6 +781,18 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         ${adminNoteTd}`;
     }
     tbody.appendChild(tr);
+    // Sous-total après semaine 1 (index 6) et semaine 2 (index 13)
+    if(i === 6 || i === 13){
+      const weekNum = i === 6 ? 1 : 2;
+      const weekTotal = i === 6 ? week1Total : week2Total;
+      const subTr = document.createElement('tr');
+      subTr.className = 'subtotal-row';
+      subTr.innerHTML = `
+        <td class="text-left pl-3" colspan="4">Sous-total semaine ${weekNum}</td>
+        <td class="total-cell">${fmtMins(weekTotal)}</td>
+        <td colspan="${1 + adminCols}"></td>`;
+      tbody.appendChild(subTr);
+    }
   });
   table.appendChild(tbody);
   return table;
@@ -1183,7 +1255,8 @@ async function approveSheet(empId,periodKey){
   DB.timesheets[key].approved=true; DB.timesheets[key].approvedAt=new Date().toISOString();
   DB.timesheets[key].totalMinutes=calcSheetTotal(DB.timesheets[key]);
   save(); autoBackup(DB,'approve'); render();
-  // Sync vers Airtable en arrière-plan (pas de await pour ne pas bloquer l'UI)
+  const empName = DB.employees.find(e=>e.id===empId)?.name||'Employé';
+  toast(`${empName} — feuille approuvée ✓`, 'success');
   syncApprovalToAirtable(empId, periodKey, true);
 }
 
@@ -1200,6 +1273,7 @@ async function approveAll(periodKey){
     }
   });
   save(); autoBackup(DB,'approve-all'); render();
+  if(toSync.length > 0) toast(`${toSync.length} feuille(s) approuvée(s) ✓`, 'success');
   // Sync vers Airtable séquentiellement pour éviter le rate limit
   for(const empId of toSync){
     await syncApprovalToAirtable(empId, periodKey, true);
@@ -1210,13 +1284,15 @@ function unlockSheet(empId,periodKey){
   const key=`${empId}_${periodKey}`;
   if(DB.timesheets[key]){DB.timesheets[key].approved=false;DB.timesheets[key].approvedAt=null;}
   save(); render();
+  const empName = DB.employees.find(e=>e.id===empId)?.name||'Employé';
+  toast(`${empName} — feuille déverrouillée`, 'info');
   syncApprovalToAirtable(empId, periodKey, false); // décoche Approuvé dans Airtable
 }
 
 async function sendReminder(empId) {
   const emp = DB.employees.find(e => e.id === empId);
   if (!emp || !emp.airtableId) {
-    alert("Erreur : ID Airtable manquant pour cet employé.");
+    toast('Erreur : ID Airtable manquant pour cet employé.', 'error');
     return;
   }
   try {
@@ -1226,18 +1302,18 @@ async function sendReminder(empId) {
       body: JSON.stringify({ airtableId: emp.airtableId, sendReminder: true })
     });
     if (resp.ok) {
-      alert(`✅ Rappel envoyé à ${emp.name}.`);
+      toast(`Rappel envoyé à ${emp.name}.`, 'success');
     } else {
-      alert("Erreur lors de l'envoi du rappel.");
+      toast("Erreur lors de l'envoi du rappel.", 'error');
     }
   } catch(e) {
-    alert("Erreur de connexion.");
+    toast("Erreur de connexion.", 'error');
   }
 }
 
 async function remindAll(){
   const toRemind = DB.employees.filter(e => e.airtableId);
-  if(toRemind.length === 0){ alert('Aucun employé avec un ID Airtable.'); return; }
+  if(toRemind.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
   let sent = 0, errors = 0;
   for(const emp of toRemind){
     try{
@@ -1249,8 +1325,8 @@ async function remindAll(){
       if(resp.ok) sent++; else errors++;
     } catch(e){ errors++; }
   }
-  if(errors > 0) alert(`Rappels envoyés: ${sent}. Erreurs: ${errors}.`);
-  else alert(`${sent} rappel(s) envoyé(s) !`);
+  if(errors > 0) toast(`Rappels envoyés: ${sent}. Erreurs: ${errors}.`, 'error');
+  else toast(`${sent} rappel(s) envoyé(s) !`, 'success');
   render();
 }
 
@@ -1595,7 +1671,7 @@ function addEmployee(){
   const phone=document.getElementById('ae-phone').value.trim();
   const airtableId=document.getElementById('ae-atid').value.trim();
   const partTime=document.getElementById('ae-pt').checked;
-  if(!name){alert('Le nom est requis.');return;}
+  if(!name){toast('Le nom est requis.', 'error');return;}
   DB.employees.push({
     id:'emp'+Date.now(), name, email, phone, partTime,
     reminderCount:0, password:null, autoFill:false, inputMode:'clock',
@@ -1625,6 +1701,8 @@ function renderEditEmpModal(){
       <label class="flex items-center gap-2 text-sm cursor-pointer">
         <input type="checkbox" id="ee-pt" ${emp.partTime?'checked':''}> Temps partiel
       </label>
+      <div><label class="field-label block mb-1">Dîner par défaut (ex: 0.5 ou 1)</label>
+        <input type="text" id="ee-lunch" class="w-full" placeholder="0.5" value="${emp.defaultLunch||''}"></div>
       <div class="border-t pt-3">
         <label class="flex items-start gap-2 text-sm cursor-pointer">
           <input type="checkbox" id="ee-autofill" ${emp.autoFill?'checked':''} class="mt-0.5 flex-shrink-0">
@@ -1656,13 +1734,14 @@ function renderEditEmpModal(){
 function saveEditEmp(empId){
   const emp=DB.employees.find(e=>e.id===empId); if(!emp) return;
   const name=document.getElementById('ee-name').value.trim();
-  if(!name){alert('Le nom est requis.');return;}
+  if(!name){toast('Le nom est requis.', 'error');return;}
   emp.name=name;
   emp.email=document.getElementById('ee-email').value.trim();
   emp.phone=document.getElementById('ee-phone').value.trim();
   emp.airtableId=document.getElementById('ee-atid').value.trim();
   emp.partTime=document.getElementById('ee-pt').checked;
   emp.autoFill=document.getElementById('ee-autofill').checked;
+  emp.defaultLunch=document.getElementById('ee-lunch').value.trim();
   const modeEl=document.querySelector('input[name="ee-inputmode"]:checked');
   if(modeEl) emp.inputMode=modeEl.value;
   save(); state.showEditEmpModal=null; render();
@@ -1842,6 +1921,7 @@ async function syncFullSheetToAirtable(eid, pk){
     if(idsCached) save();
   } finally {
     _syncLocks.delete(sheetKey);
+  syncEnd();
   }
 }
 
@@ -1910,7 +1990,7 @@ async function syncRowToAirtable(eid, pk, idx){
 // Appelé par approveSheet() et approveAll()
 async function resyncAllToAirtable(periodKey){
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
-  if(emps.length === 0){ alert('Aucun employé avec un ID Airtable.'); return; }
+  if(emps.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
 
   // Effacer les recordId locaux pour forcer une re-découverte
   emps.forEach(emp => {
@@ -1925,7 +2005,7 @@ async function resyncAllToAirtable(periodKey){
     done++;
   }
   save();
-  alert(`✅ Re-sync terminé pour ${done} employé(s). Les IDs Airtable sont maintenant sauvegardés.`);
+  toast(`Re-sync terminé pour ${done} employé(s).`, 'success');
   render();
 }
 
@@ -1968,7 +2048,9 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
     }).catch(e => console.error('syncApproval row error:', e.message));
   });
 
+  syncStart();
   await Promise.allSettled(filteredPromises);
+  syncEnd();
   console.log(`✅ Approval synced to Airtable: ${emp.name} approved=${approved}`);
 }
 
