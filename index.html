@@ -276,14 +276,25 @@ function toTimeVal(str){
 // ================================================================
 const _syncTimers = {}; // debounce timers: key = "eid-idx"
 const _syncLocks  = new Set(); // évite les exécutions parallèles de syncFullSheet
+const _fieldOriginals = {}; // capture valeur originale au focus pour le log
 
+function captureOriginal(eid,pk,idx,field,val){
+  const key=`${eid}_${pk}_${idx}_${field}`;
+  if(!(_fieldOriginals[key]!==undefined)) _fieldOriginals[key]=val;
+}
+function commitChange(eid,pk,idx,field,val){
+  const key=`${eid}_${pk}_${idx}_${field}`;
+  const original=_fieldOriginals[key];
+  const sheet=DB.timesheets[`${eid}_${pk}`];
+  if(original!==undefined && original!==val){
+    logChange(eid, sheet?.rows[idx]?.date, field, original, val||'');
+  }
+  delete _fieldOriginals[key];
+}
 function liveCalc(eid,pk,idx,field,val,shouldLog=false){
   const sk=`${eid}_${pk}`;
   const sheet=DB.timesheets[sk];
   if(!sheet) return;
-  if(shouldLog && ['start','end','lunch'].includes(field) && sheet.rows[idx][field] !== val && val !== ''){
-    logChange(eid, sheet.rows[idx].date, field, sheet.rows[idx][field], val);
-  }
   sheet.rows[idx][field]=val;
   const row=sheet.rows[idx];
   const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0;
@@ -784,14 +795,17 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
       tr.innerHTML=`
         <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.start}"
+          onfocus="captureOriginal('${empId}','${period.key}',${i},'start',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'start',this.value)"
-          onchange="liveCalc('${empId}','${period.key}',${i},'start',this.value,true)"/></td>
+          onchange="commitChange('${empId}','${period.key}',${i},'start',this.value);liveCalc('${empId}','${period.key}',${i},'start',this.value)"/></td>
         <td><input type="text" class="time-input" placeholder="${emp?.defaultLunch||'—'}" value="${row.lunch}"
+          onfocus="captureOriginal('${empId}','${period.key}',${i},'lunch',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"
-          onchange="liveCalc('${empId}','${period.key}',${i},'lunch',this.value,true)"/></td>
+          onchange="commitChange('${empId}','${period.key}',${i},'lunch',this.value);liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"/></td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.end}"
+          onfocus="captureOriginal('${empId}','${period.key}',${i},'end',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'end',this.value)"
-          onchange="liveCalc('${empId}','${period.key}',${i},'end',this.value,true)"/></td>
+          onchange="commitChange('${empId}','${period.key}',${i},'end',this.value);liveCalc('${empId}','${period.key}',${i},'end',this.value)"/></td>
         <td class="total-cell" id="row-t-${empId}-${i}">${worked!==null?fmtMins(worked):'—'}</td>
         <td>
           <div class="flex items-center gap-1">
@@ -2079,6 +2093,13 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
 }
 
 
+function clearChangeLog(){
+  if(!confirm('Effacer tout l'historique des modifications?')) return;
+  DB.changeLog=[];
+  save();
+  render();
+}
+
 // ── Change Log tab
 function renderChangeLog(){
   const frag = document.createDocumentFragment();
@@ -2087,8 +2108,7 @@ function renderChangeLog(){
   const toolbar = el('div','mb-4 flex flex-wrap items-center gap-2');
   toolbar.innerHTML = `
     <span class="text-sm text-slate-500">${log.length} modification(s) enregistrée(s)</span>
-    <button onclick="if(confirm('Effacer tout l\'historique?')){DB.changeLog=[];save();render();}"
-      class="btn btn-red text-xs ml-auto">🗑 Effacer</button>`;
+    <button onclick="clearChangeLog()" class="btn btn-red text-xs ml-auto">🗑 Effacer</button>`;
   frag.appendChild(toolbar);
 
   if(log.length === 0){
@@ -2118,7 +2138,7 @@ function renderChangeLog(){
     const empName = emp?.name || entry.empId;
     const d = new Date(entry.ts);
     const dateStr = d.toLocaleDateString('fr-CA',{day:'2-digit',month:'short',year:'numeric'});
-    const timeStr = d.toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'});
+    const timeStr = d.toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     const journee = entry.date ? new Date(entry.date+'T00:00:00').toLocaleDateString('fr-CA',{weekday:'short',day:'2-digit',month:'short'}) : '—';
     const tr = document.createElement('tr');
     tr.innerHTML = `
