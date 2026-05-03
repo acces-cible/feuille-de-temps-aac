@@ -1137,7 +1137,8 @@ function renderOverview(period){
   const actions=el('div','mb-4 flex flex-wrap gap-2');
   actions.innerHTML=`
     <button onclick="approveAll('${period.key}')" class="btn btn-green">✓✓ Approuver tous</button>
-    <button onclick="remindAll()" class="btn btn-orange">📣 Rappeler tous</button>`;
+    <button onclick="remindAll()" class="btn btn-orange">📣 Rappeler tous</button>
+    <button onclick="resyncAllToAirtable('${period.key}')" class="btn btn-navy">🔄 Re-sync Airtable</button>`;
   frag.appendChild(actions);
 
   sheets.forEach(({emp,sheet})=>{
@@ -1905,6 +1906,27 @@ async function syncRowToAirtable(eid, pk, idx){
 
 // Coche "Approuvé" sur toutes les lignes Airtable d'un employé pour une période
 // Appelé par approveSheet() et approveAll()
+async function resyncAllToAirtable(periodKey){
+  const emps = DB.employees.filter(e => e.airtableId && !e.archived);
+  if(emps.length === 0){ alert('Aucun employé avec un ID Airtable.'); return; }
+
+  // Effacer les recordId locaux pour forcer une re-découverte
+  emps.forEach(emp => {
+    const sheet = DB.timesheets[`${emp.id}_${periodKey}`];
+    if(sheet) sheet.rows.forEach(r => delete r.airtableRecordId);
+  });
+  save();
+
+  let done = 0;
+  for(const emp of emps){
+    await syncFullSheetToAirtable(emp.id, periodKey);
+    done++;
+  }
+  save();
+  alert(`✅ Re-sync terminé pour ${done} employé(s). Les IDs Airtable sont maintenant sauvegardés.`);
+  render();
+}
+
 async function syncApprovalToAirtable(empId, periodKey, approved){
   const emp = DB.employees.find(e => e.id === empId);
   if(!emp || !emp.airtableId) return;
