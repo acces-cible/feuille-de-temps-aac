@@ -1200,8 +1200,10 @@ async function approveAll(periodKey){
     }
   });
   save(); autoBackup(DB,'approve-all'); render();
-  // Sync vers Airtable en arrière-plan
-  toSync.forEach(empId => syncApprovalToAirtable(empId, periodKey, true));
+  // Sync vers Airtable séquentiellement pour éviter le rate limit
+  for(const empId of toSync){
+    await syncApprovalToAirtable(empId, periodKey, true);
+  }
 }
 
 function unlockSheet(empId,periodKey){
