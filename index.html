@@ -140,6 +140,19 @@ function syncEnd(){
   }
 }
 
+function logChange(empId, date, field, oldVal, newVal){
+  if(!DB.changeLog) DB.changeLog = [];
+  const who = state.currentUser === 'admin' ? 'Admin' : (DB.employees.find(e=>e.id===empId)?.name || empId);
+  DB.changeLog.unshift({
+    ts: new Date().toISOString(),
+    empId, date, field,
+    old: oldVal, new: newVal,
+    by: who
+  });
+  // Garder seulement les 500 dernières entrées
+  if(DB.changeLog.length > 500) DB.changeLog.length = 500;
+}
+
 // ================================================================
 //  DATA SERVICE — localStorage now, swap .load()/.save() for Airtable later
 // ================================================================
@@ -162,7 +175,8 @@ const DataService = {
         {id:'emp7',name:'Michel Malouin',            email:'',phone:'',partTime:true, reminderCount:0,password:null,autoFill:false,inputMode:'clock',airtableId:''},
       ],
       timesheets:{},
-      periodReminderResets:{}
+      periodReminderResets:{},
+      changeLog:[]
     };
   }
 };
@@ -267,12 +281,22 @@ function liveCalc(eid,pk,idx,field,val){
   const sk=`${eid}_${pk}`;
   const sheet=DB.timesheets[sk];
   if(!sheet) return;
+  const oldVal = sheet.rows[idx][field];
+  if(['start','end','lunch'].includes(field) && oldVal !== val && val !== ''){
+    logChange(eid, sheet.rows[idx].date, field, oldVal, val);
+  }
   sheet.rows[idx][field]=val;
   const row=sheet.rows[idx];
   const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0;
   const worked=(s!==null&&e!==null)?Math.max(0,e-s-l):null;
   const rc=document.getElementById(`row-t-${eid}-${idx}`);
   if(rc) rc.textContent=fmtMins(worked);
+  // Validation: alerte si journée dépasse 10h
+  if(worked !== null && worked > 600){
+    const d = new Date(sheet.rows[idx].date + 'T00:00:00');
+    toast(`⚠️ ${dayLabel(d)} — ${fmtMins(worked)} dépasse 10h`, 'error', 5000);
+  }
+
   const gt=sheet.rows.reduce((sum,r)=>{
     const rs=parseTime(r.start),re=parseTime(r.end),rl=parseTime(r.lunch)||0;
     if(rs!==null&&re!==null){const d=re-rs-rl;return sum+(d<0?0:d);}
@@ -1118,8 +1142,8 @@ function renderAdmin(){
       <button onclick="logout()" class="btn btn-red text-xs">Déconnexion</button>
     </div>`;
   const tabs=el('div','bg-white border-b flex gap-0 px-2 overflow-x-auto');
-  ['overview','staff','templates','archives'].forEach(tab=>{
-    const labels={overview:"Vue d'ensemble",staff:'Employés',templates:'Modèles',archives:'Archives'};
+  ['overview','staff','templates','archives','history'].forEach(tab=>{
+    const labels={overview:"Vue d'ensemble",staff:'Employés',templates:'Modèles',archives:'Archives',history:'📋 Historique'};
     const btn=el('button',`px-4 py-3 text-sm whitespace-nowrap ${state.adminTab===tab?'tab-active':'text-slate-500 hover:text-slate-700'}`);
     btn.textContent=labels[tab];
     btn.onclick=()=>{state.adminTab=tab;render();};
@@ -1130,6 +1154,7 @@ function renderAdmin(){
   else if(state.adminTab==='staff')     content.appendChild(renderStaff());
   else if(state.adminTab==='templates') content.appendChild(renderTemplates());
   else if(state.adminTab==='archives')  content.appendChild(renderArchives());
+  else if(state.adminTab==='history')   content.appendChild(renderChangeLog());
   wrap.appendChild(header); wrap.appendChild(tabs); wrap.appendChild(content);
   return wrap;
 }
@@ -2052,6 +2077,66 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   await Promise.allSettled(filteredPromises);
   syncEnd();
   console.log(`✅ Approval synced to Airtable: ${emp.name} approved=${approved}`);
+}
+
+
+// ── Change Log tab
+function renderChangeLog(){
+  const frag = document.createDocumentFragment();
+  const log = DB.changeLog || [];
+
+  const toolbar = el('div','mb-4 flex flex-wrap items-center gap-2');
+  toolbar.innerHTML = `
+    <span class="text-sm text-slate-500">${log.length} modification(s) enregistrée(s)</span>
+    <button onclick="if(confirm('Effacer tout l\'historique?')){DB.changeLog=[];save();render();}"
+      class="btn btn-red text-xs ml-auto">🗑 Effacer</button>`;
+  frag.appendChild(toolbar);
+
+  if(log.length === 0){
+    const empty = el('div','card p-8 text-center text-slate-400');
+    empty.innerHTML = '<div class="text-3xl mb-2">📭</div><div>Aucune modification enregistrée.</div>';
+    frag.appendChild(empty);
+    return frag;
+  }
+
+  const fieldLabels = {start:'Début', end:'Fin', lunch:'Dîner', notes:'Notes'};
+
+  const table = el('div','card overflow-x-auto');
+  const t = document.createElement('table');
+  t.innerHTML = `<thead><tr class="nav-navy">
+    <th class="text-left pl-3" style="min-width:140px">Date/heure</th>
+    <th class="text-left" style="min-width:160px">Employé</th>
+    <th class="text-left" style="min-width:100px">Journée</th>
+    <th style="min-width:80px">Champ</th>
+    <th style="min-width:80px">Avant</th>
+    <th style="min-width:80px">Après</th>
+    <th class="text-left" style="min-width:100px">Modifié par</th>
+  </tr></thead>`;
+  const tbody = document.createElement('tbody');
+
+  log.forEach(entry => {
+    const emp = DB.employees.find(e => e.id === entry.empId);
+    const empName = emp?.name || entry.empId;
+    const d = new Date(entry.ts);
+    const dateStr = d.toLocaleDateString('fr-CA',{day:'2-digit',month:'short',year:'numeric'});
+    const timeStr = d.toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'});
+    const journee = entry.date ? new Date(entry.date+'T00:00:00').toLocaleDateString('fr-CA',{weekday:'short',day:'2-digit',month:'short'}) : '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="text-left pl-3 text-xs text-slate-500">${dateStr} ${timeStr}</td>
+      <td class="text-left text-sm font-medium">${empName}</td>
+      <td class="text-left text-xs">${journee}</td>
+      <td class="text-xs">${fieldLabels[entry.field]||entry.field}</td>
+      <td class="mono text-xs text-slate-400">${entry.old||'—'}</td>
+      <td class="mono text-xs font-semibold text-blue-700">${entry.new||'—'}</td>
+      <td class="text-left text-xs">${entry.by||'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  t.appendChild(tbody);
+  table.appendChild(t);
+  frag.appendChild(table);
+  return frag;
 }
 
 // ================================================================
