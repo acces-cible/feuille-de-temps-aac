@@ -2094,7 +2094,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
 
 
 function clearChangeLog(){
-  if(!confirm('Effacer tout l'historique des modifications?')) return;
+  if(!confirm('Effacer tout l’historique des modifications?')) return;
   DB.changeLog=[];
   save();
   render();
