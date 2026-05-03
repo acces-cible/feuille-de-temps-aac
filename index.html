@@ -277,13 +277,12 @@ function toTimeVal(str){
 const _syncTimers = {}; // debounce timers: key = "eid-idx"
 const _syncLocks  = new Set(); // évite les exécutions parallèles de syncFullSheet
 
-function liveCalc(eid,pk,idx,field,val){
+function liveCalc(eid,pk,idx,field,val,shouldLog=false){
   const sk=`${eid}_${pk}`;
   const sheet=DB.timesheets[sk];
   if(!sheet) return;
-  const oldVal = sheet.rows[idx][field];
-  if(['start','end','lunch'].includes(field) && oldVal !== val && val !== ''){
-    logChange(eid, sheet.rows[idx].date, field, oldVal, val);
+  if(shouldLog && ['start','end','lunch'].includes(field) && sheet.rows[idx][field] !== val && val !== ''){
+    logChange(eid, sheet.rows[idx].date, field, sheet.rows[idx][field], val);
   }
   sheet.rows[idx][field]=val;
   const row=sheet.rows[idx];
@@ -786,13 +785,13 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.start}"
           oninput="liveCalc('${empId}','${period.key}',${i},'start',this.value)"
-          onchange="liveCalc('${empId}','${period.key}',${i},'start',this.value)"/></td>
+          onchange="liveCalc('${empId}','${period.key}',${i},'start',this.value,true)"/></td>
         <td><input type="text" class="time-input" placeholder="${emp?.defaultLunch||'—'}" value="${row.lunch}"
           oninput="liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"
-          onchange="liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"/></td>
+          onchange="liveCalc('${empId}','${period.key}',${i},'lunch',this.value,true)"/></td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.end}"
           oninput="liveCalc('${empId}','${period.key}',${i},'end',this.value)"
-          onchange="liveCalc('${empId}','${period.key}',${i},'end',this.value)"/></td>
+          onchange="liveCalc('${empId}','${period.key}',${i},'end',this.value,true)"/></td>
         <td class="total-cell" id="row-t-${empId}-${i}">${worked!==null?fmtMins(worked):'—'}</td>
         <td>
           <div class="flex items-center gap-1">
