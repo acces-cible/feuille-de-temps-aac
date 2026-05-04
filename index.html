@@ -1407,6 +1407,12 @@ function renderOverview(period){
           :`<span class="badge-pending">En attente</span><button onclick="approveSheet('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button>`}
         <button onclick="sendReminder('${emp.id}')" class="btn btn-blue text-xs">⏰ Rappel</button>
         ${isZero?`<span class="text-xs ${emp.partTime?'text-purple-600':'text-red-600'} font-semibold">⚠ 0h</span>`:''}
+        ${(()=>{
+          if(!emp.airtableId) return '<span class="text-xs text-red-500 font-semibold" title="Aucun ID Airtable configuré">❌ Non lié</span>';
+          const firstRow = sheet?.rows?.[0];
+          if(firstRow?.airtableRecordId) return '<span class="text-xs text-green-600" title="Records Airtable initialisés">✅ Airtable OK</span>';
+          return '<span class="text-xs text-amber-500" title="Records Airtable non encore créés — cliquer Initialiser période">⚠️ À initialiser</span>';
+        })()}
       </div>`;
     card.appendChild(ch);
     const s2=getOrCreateSheet(DB,emp.id,period.key,period.start); save();
