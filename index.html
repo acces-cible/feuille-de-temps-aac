@@ -2057,6 +2057,7 @@ async function syncFullSheetToAirtable(eid, pk){
   // Envoyer chaque ligne qui a des données — une requête par ligne
   const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
   dbg(`Sync: ${emp.name} — ${rowsWithData.length} ligne(s)`);
+  dbg(`airtableId: ${emp.airtableId||'VIDE'}`);
   if(!emp.airtableId) dbg('⚠️ airtableId manquant!', 'error');
   console.log(`syncFullSheet: ${emp.name} | ${rowsWithData.length} lignes à sync`);
 
