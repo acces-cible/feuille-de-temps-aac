@@ -40,6 +40,7 @@ module.exports = async function handler(req, res) {
   if (body.start     !== undefined) fields["Début"]           = body.start     !== '' ? body.start.toString()     : null;
   if (body.end       !== undefined) fields["Fin"]             = body.end       !== '' ? body.end.toString()       : null;
   if (body.lunch     !== undefined) fields["Dîner"]           = body.lunch     !== '' ? body.lunch.toString()     : null;
+  if (body.pause     !== undefined) fields["Pause"]           = body.pause     !== '' ? body.pause.toString()     : null;
   if (body.notes     !== undefined) fields["Notes"]           = body.notes     !== '' ? body.notes               : null;
   if (body.adminNote !== undefined) fields["Note Admin"]      = body.adminNote !== '' ? body.adminNote           : null;
   if (periode        !== undefined && periode !== '') fields["Période de paie"] = periode;
