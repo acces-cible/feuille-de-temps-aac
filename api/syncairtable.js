@@ -43,7 +43,7 @@ module.exports = async function handler(req, res) {
   if (body.pause     !== undefined) fields["Pause"]           = body.pause     !== '' ? body.pause.toString()     : null;
   if (body.notes     !== undefined) fields["Notes"]           = body.notes     !== '' ? body.notes               : null;
   if (body.adminNote !== undefined) fields["Note Admin"]      = body.adminNote !== '' ? body.adminNote           : null;
-  if (periode        !== undefined && periode !== '') fields["Période de paie"] = periode;
+  // Période de paie retirée — utiliser une formule Airtable basée sur la Date
   if (approved       !== undefined) fields["Approuvé"]        = approved === true;
 
   console.log('Champs:', JSON.stringify(fields));
