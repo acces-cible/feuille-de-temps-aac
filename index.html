@@ -151,7 +151,7 @@ function dbg(msg, type='info'){
   const panel = document.getElementById('debug-panel');
   const log   = document.getElementById('debug-log');
   if(!panel || !log) return;
-  panel.classList.add('active');
+  // Ne pas ouvrir automatiquement — seulement logguer si déjà ouvert
   const line = document.createElement('div');
   line.className = 'dp-line' + (type==='error'?' err':type==='ok'?' ok':'');
   const t = new Date().toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -619,7 +619,6 @@ function renderEmployee(){
     <div class="flex items-center gap-2">
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
       <button onclick="refreshFromAirtable()" data-refresh class="text-blue-200 hover:text-white text-base px-1" title="Actualiser depuis Airtable">🔄</button>
-      <button onclick="document.getElementById('debug-panel').classList.toggle('active')" class="text-blue-200 hover:text-white text-xs px-1" title="Debug">🐛</button>
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
