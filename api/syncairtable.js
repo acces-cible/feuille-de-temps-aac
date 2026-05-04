@@ -31,20 +31,19 @@ module.exports = async function handler(req, res) {
   };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
-  // Construire les champs
-  // Les valeurs vides envoient null pour effacer la cellule dans Airtable
+  // Construire les champs — logique originale (valeurs vides = ignorées)
   const fields = {};
   fields["Employé"] = [empId];
   fields["Date"]    = date;
 
-  if (body.start     !== undefined) fields["Début"]           = body.start     !== '' ? body.start.toString()     : null;
-  if (body.end       !== undefined) fields["Fin"]             = body.end       !== '' ? body.end.toString()       : null;
-  if (body.lunch     !== undefined) fields["Dîner"]           = body.lunch     !== '' ? body.lunch.toString()     : null;
-  if (body.pause     !== undefined) fields["Pause"]           = body.pause     !== '' ? body.pause.toString()     : null;
-  if (body.notes     !== undefined) fields["Notes"]           = body.notes     !== '' ? body.notes               : null;
-  if (body.adminNote !== undefined) fields["Note Admin"]      = body.adminNote !== '' ? body.adminNote           : null;
-  // Période de paie retirée — utiliser une formule Airtable basée sur la Date
-  if (approved       !== undefined) fields["Approuvé"]        = approved === true;
+  if (body.start     !== undefined && body.start     !== '') fields["Début"]      = body.start.toString();
+  if (body.end       !== undefined && body.end       !== '') fields["Fin"]        = body.end.toString();
+  if (body.lunch     !== undefined && body.lunch     !== '') fields["Dîner"]      = body.lunch.toString();
+  if (body.pause     !== undefined && body.pause     !== '') fields["Pause"]      = body.pause.toString();
+  if (body.notes     !== undefined)                          fields["Notes"]      = body.notes;
+  if (body.adminNote !== undefined)                          fields["Note Admin"] = body.adminNote;
+  if (periode        !== undefined && periode        !== '') fields["Période de paie"] = periode;
+  if (approved       !== undefined)                          fields["Approuvé"]   = approved === true;
 
   console.log('Champs:', JSON.stringify(fields));
 
@@ -64,7 +63,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // Recherche par date — filtre simple + vérif employé en JS
+    // Recherche par date + employé
     const filter = `{Date}='${date}'`;
     const searchRes = await axios.get(
       `${baseUrl}?filterByFormula=${encodeURIComponent(filter)}`,
