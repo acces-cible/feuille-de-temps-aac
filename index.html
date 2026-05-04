@@ -588,6 +588,8 @@ function checkPeriodReset(){
     save();
     // Sync le reset vers Airtable pour tous les employés
     DB.employees.forEach(e=>{ if(e.airtableId) syncEmpPrefsToAirtable(e.id); });
+    // Initialiser automatiquement les records Airtable pour la nouvelle période
+    initPeriodAirtable(p.key);
   }
 }
 
@@ -1379,7 +1381,8 @@ function renderOverview(period){
   actions.innerHTML=`
     <button onclick="approveAll('${period.key}')" class="btn btn-green">✓✓ Approuver tous</button>
     <button onclick="remindAll()" class="btn btn-orange">📣 Rappeler tous</button>
-    <button onclick="resyncAllToAirtable('${period.key}')" class="btn btn-navy">🔄 Re-sync Airtable</button>`;
+    <button onclick="resyncAllToAirtable('${period.key}')" class="btn btn-navy">🔄 Re-sync Airtable</button>
+    <button onclick="initPeriodAirtable('${period.key}')" class="btn btn-navy" style="background:#7c3aed">⚡ Initialiser période</button>`;
   frag.appendChild(actions);
 
   sheets.forEach(({emp,sheet})=>{
@@ -1848,6 +1851,8 @@ function addEmployee(){
     airtableId  // ← Airtable record ID — used by syncRowToAirtable
   });
   save(); state.showAddEmpModal=false; state.addEmpForm={name:'',email:'',phone:'',partTime:false}; render();
+  // Initialiser les records Airtable pour la période courante si l'employé a un ID Airtable
+  if(airtableId) initPeriodAirtable(PERIOD.current().key);
 }
 
 function renderEditEmpModal(){
@@ -1972,7 +1977,11 @@ function archiveEmployee(empId){
 
 function unarchiveEmployee(empId){
   const emp=DB.employees.find(e=>e.id===empId);
-  if(emp){emp.archived=false;save();}
+  if(emp){
+    emp.archived=false; save();
+    // Réinitialiser les records Airtable pour la période courante
+    if(emp.airtableId) initPeriodAirtable(PERIOD.current().key);
+  }
   render();
 }
 
@@ -2163,6 +2172,41 @@ async function syncRowToAirtable(eid, pk, idx){
 
 // Coche "Approuvé" sur toutes les lignes Airtable d'un employé pour une période
 // Appelé par approveSheet() et approveAll()
+async function initPeriodAirtable(periodKey){
+  const period = PERIOD.list(24).find(p => p.key === periodKey);
+  if(!period) return;
+  const emps = DB.employees.filter(e => e.airtableId && !e.archived);
+  if(emps.length === 0){ toast('Aucun employé avec ID Airtable.', 'error'); return; }
+
+  // Générer les 14 dates de la période
+  const dates = [];
+  for(let i = 0; i < 14; i++){
+    const d = new Date(period.start);
+    d.setDate(d.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  toast('Initialisation en cours…', 'info', 8000);
+  try {
+    const resp = await fetch('/api/initperiod', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employees: emps.map(e => ({ airtableId: e.airtableId, name: e.name })),
+        dates
+      })
+    });
+    const result = await resp.json();
+    if(resp.ok){
+      toast(`✅ ${result.created} créé(s), ${result.skipped} existant(s)`, 'success', 6000);
+    } else {
+      toast(`Erreur: ${result.error}`, 'error');
+    }
+  } catch(e) {
+    toast('Erreur de connexion.', 'error');
+  }
+}
+
 async function resyncAllToAirtable(periodKey){
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
