@@ -862,6 +862,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="quickFill('${empId}','${period.key}',${i},'Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px">Congé</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px">Maladie</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Jour</button>
+            <button onclick="clearRow('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
           </div>
         </td>
         ${adminNoteTd}`;
@@ -986,7 +987,10 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   bm.addEventListener('click',()=>quickFill(empId,periodKey,i,'Maladie'));
   const bdj=el('button','btn btn-blue flex-1'); bdj.style.padding='10px'; bdj.textContent='½ Demi-journée';
   bdj.addEventListener('click',()=>quickFill(empId,periodKey,i,'Demi-journée'));
-  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj);
+  const bclr=el('button','btn btn-red'); bclr.style.cssText='padding:10px;flex:0 0 auto;';
+  bclr.textContent='✕ Effacer';
+  bclr.addEventListener('click',()=>clearRow(empId,periodKey,i));
+  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj); btnRow.appendChild(bclr);
   notesWrap.appendChild(btnRow);
 
   inner.appendChild(notesWrap);
@@ -1040,6 +1044,17 @@ function makeMobileBreakSelect(field, value, empId, periodKey, idx){
     commitChange(empId,periodKey,idx,field,sel.value);
   });
   return sel;
+}
+
+function clearRow(empId,periodKey,rowIdx){
+  if(!confirm('Effacer toutes les données de cette journée?')) return;
+  const key=`${empId}_${periodKey}`;
+  if(!DB.timesheets[key]) return;
+  const row = DB.timesheets[key].rows[rowIdx];
+  row.start=''; row.end=''; row.lunch=''; row.pause=''; row.notes='';
+  save();
+  syncFullSheetToAirtable(empId, periodKey);
+  render();
 }
 
 function quickFill(empId,periodKey,rowIdx,value){
