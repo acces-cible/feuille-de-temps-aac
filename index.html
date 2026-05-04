@@ -263,7 +263,7 @@ function fmtMins(mins){
   if(mins===null||mins===undefined||mins<0) return '—';
   return `${Math.floor(mins/60)}h${String(mins%60).padStart(2,'0')}`;
 }
-function calcWorked(s,e,l){ if(s===null||e===null)return null; const w=e-s-(l||0); return w<0?0:w; }
+function calcWorked(s,e,l,p){ if(s===null||e===null)return null; const w=e-s-(l||0)-(p||0); return w<0?0:w; }
 
 // Convert stored value → HH:MM for <input type="time">
 function toTimeVal(str){
@@ -347,7 +347,7 @@ function makeRow(date){
   const y=date.getFullYear();
   const m=String(date.getMonth()+1).padStart(2,'0');
   const d=String(date.getDate()).padStart(2,'0');
-  return {date:`${y}-${m}-${d}`,start:'',end:'',lunch:'',notes:'',adminNote:''};
+  return {date:`${y}-${m}-${d}`,start:'',end:'',lunch:'',pause:'',notes:'',adminNote:''};
 }
 function getOrCreateSheet(db,empId,periodKey,periodStart){
   const key=`${empId}_${periodKey}`;
@@ -357,7 +357,7 @@ function getOrCreateSheet(db,empId,periodKey,periodStart){
 }
 function calcSheetTotal(sheet){
   if(!sheet) return 0;
-  return sheet.rows.reduce((sum,r)=>{ const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch)); return sum+(w||0); },0);
+  return sheet.rows.reduce((sum,r)=>{ const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause)); return sum+(w||0); },0);
 }
 
 // ================================================================
@@ -625,9 +625,22 @@ function renderEmployee(){
   deskWrap.appendChild(buildDesktopTable(sheet,false,emp.id,period));
   content.appendChild(deskWrap);
 
-  // Mobile cards
+  // Mobile cards with weekly subtotals
   const mobWrap=el('div','mobile-only');
-  sheet.rows.forEach((row,i)=>mobWrap.appendChild(buildMobileCard(row,i,sheet.approved,emp.id,period.key)));
+  const week1Mob = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
+  const week2Mob = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
+  sheet.rows.forEach((row,i)=>{
+    mobWrap.appendChild(buildMobileCard(row,i,sheet.approved,emp.id,period.key));
+    if(i === 6 || i === 13){
+      const weekNum = i === 6 ? 1 : 2;
+      const weekTotal = i === 6 ? week1Mob : week2Mob;
+      const subCard = el('div','mx-1 mb-1 px-4 py-2 rounded-xl flex items-center justify-between');
+      subCard.style.cssText='background:#f1f5f9;border:2px solid #cbd5e1;';
+      subCard.innerHTML=`<span style="font-size:12px;font-weight:600;color:#475569">Sous-total semaine ${weekNum}</span>
+        <span style="font-size:15px;font-weight:700;color:#1e3a5f;font-family:monospace">${fmtMins(weekTotal)}</span>`;
+      mobWrap.appendChild(subCard);
+    }
+  });
   content.appendChild(mobWrap);
 
   const banner=el('div','total-banner flex items-center justify-between');
@@ -706,6 +719,7 @@ function renderEmpHistory(emp){
     <th class="text-left pl-3" style="min-width:130px">Journée</th>
     <th style="min-width:82px">Début</th>
     <th style="min-width:82px">Dîner</th>
+    <th style="min-width:82px">Pause</th>
     <th style="min-width:82px">Fin</th>
     <th style="min-width:80px">Total</th>
     <th style="min-width:220px">Notes</th>
@@ -715,11 +729,12 @@ function renderEmpHistory(emp){
     const d=new Date(row.date+'T00:00:00');
     const tr=document.createElement('tr');
     tr.className=isWeekend(d)?'bg-weekend':'bg-day';
-    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch));
+    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
     tr.innerHTML=`
       <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
       <td class="mono text-sm">${row.start||'—'}</td>
       <td class="mono text-sm">${row.lunch||'—'}</td>
+      <td class="mono text-sm">${row.pause||'—'}</td>
       <td class="mono text-sm">${row.end||'—'}</td>
       <td class="total-cell">${worked!==null?fmtMins(worked):'—'}</td>
       <td class="text-xs text-slate-600">${row.notes||''}</td>`;
@@ -734,7 +749,7 @@ function renderEmpHistory(emp){
     const d=new Date(row.date+'T00:00:00');
     const weekend=isWeekend(d);
     const card=el('div',`mobile-day-card ${weekend?'weekend':'weekday'}`);
-    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch));
+    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
     card.innerHTML=`<div class="px-4 py-3">
       <div class="flex items-center justify-between mb-1">
         <div class="font-semibold text-slate-700 capitalize text-sm">${dayLabelLong(d)}</div>
@@ -761,6 +776,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     <th class="text-left pl-3" style="min-width:130px">Journée</th>
     <th style="min-width:82px">Début</th>
     <th style="min-width:82px">Dîner</th>
+    <th style="min-width:82px">Pause</th>
     <th style="min-width:82px">Fin</th>
     <th style="min-width:80px">Total</th>
     <th style="min-width:220px">Notes</th>
@@ -768,8 +784,8 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
   </tr></thead>`;
   const tbody=document.createElement('tbody');
   // Calculer sous-totaux semaines
-  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch));return s+(w||0);},0);
-  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch));return s+(w||0);},0);
+  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
+  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
   const adminCols = isAdmin ? 1 : 0;
 
   sheet.rows.forEach((row,i)=>{
@@ -799,10 +815,8 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
           onfocus="captureOriginal('${empId}','${period.key}',${i},'start',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'start',this.value)"
           onchange="commitChange('${empId}','${period.key}',${i},'start',this.value);liveCalc('${empId}','${period.key}',${i},'start',this.value)"/></td>
-        <td><input type="text" class="time-input" placeholder="${emp?.defaultLunch||'—'}" value="${row.lunch}"
-          onfocus="captureOriginal('${empId}','${period.key}',${i},'lunch',this.value)"
-          oninput="liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"
-          onchange="commitChange('${empId}','${period.key}',${i},'lunch',this.value);liveCalc('${empId}','${period.key}',${i},'lunch',this.value)"/></td>
+        <td id="cell-lunch-${empId}-${i}"></td>
+        <td id="cell-pause-${empId}-${i}"></td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.end}"
           onfocus="captureOriginal('${empId}','${period.key}',${i},'end',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'end',this.value)"
@@ -814,9 +828,15 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
               onchange="liveCalc('${empId}','${period.key}',${i},'notes',this.value)"/>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px">Congé</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px">Maladie</button>
+            <button onclick="quickFill('${empId}','${period.key}',${i},'Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Jour</button>
           </div>
         </td>
         ${adminNoteTd}`;
+      // Inject select dropdowns for lunch and pause
+      const lunchCell = tr.querySelector(`#cell-lunch-${empId}-${i}`);
+      if(lunchCell) lunchCell.appendChild(makeBreakSelect('lunch', row.lunch, empId, period.key, i, false));
+      const pauseCell = tr.querySelector(`#cell-pause-${empId}-${i}`);
+      if(pauseCell) pauseCell.appendChild(makeBreakSelect('pause', row.pause||'', empId, period.key, i, false));
     }
     tbody.appendChild(tr);
     // Sous-total après semaine 1 (index 6) et semaine 2 (index 13)
@@ -841,8 +861,8 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   const d=new Date(row.date+'T00:00:00');
   const weekend=isWeekend(d);
   const card=el('div',`mobile-day-card ${weekend?'weekend':'weekday'}`);
-  const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch);
-  const worked=calcWorked(s,e,l);
+  const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch),p=parseTime(row.pause);
+  const worked=calcWorked(s,e,l,p);
   const emp=DB.employees.find(x=>x.id===empId);
   const useClock=(emp?.inputMode||'clock')==='clock';
 
@@ -901,7 +921,18 @@ function buildMobileCard(row,i,approved,empId,periodKey){
 
   const grid=el('div','grid grid-cols-3 gap-3 mb-3');
   grid.appendChild(makeTimeField('DÉBUT','start',row.start));
-  grid.appendChild(makeTimeField('DÎNER','lunch',row.lunch));
+  // Dîner dropdown
+  const lunchCol=el('div','');
+  const lunchLbl=el('div','field-label mb-1'); lunchLbl.textContent='DÎNER';
+  lunchCol.appendChild(lunchLbl);
+  lunchCol.appendChild(makeMobileBreakSelect('lunch',row.lunch,empId,periodKey,i));
+  grid.appendChild(lunchCol);
+  // Pause dropdown
+  const pauseCol=el('div','');
+  const pauseLbl=el('div','field-label mb-1'); pauseLbl.textContent='PAUSE';
+  pauseCol.appendChild(pauseLbl);
+  pauseCol.appendChild(makeMobileBreakSelect('pause',row.pause||'',empId,periodKey,i));
+  grid.appendChild(pauseCol);
   grid.appendChild(makeTimeField('FIN','end',row.end));
   inner.appendChild(grid);
 
@@ -919,12 +950,62 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   bc.addEventListener('click',()=>quickFill(empId,periodKey,i,'Congé'));
   const bm=el('button','btn btn-orange flex-1'); bm.style.padding='10px'; bm.textContent='🤒 Maladie';
   bm.addEventListener('click',()=>quickFill(empId,periodKey,i,'Maladie'));
-  btnRow.appendChild(bc); btnRow.appendChild(bm);
+  const bdj=el('button','btn btn-blue flex-1'); bdj.style.padding='10px'; bdj.textContent='½ Demi-journée';
+  bdj.addEventListener('click',()=>quickFill(empId,periodKey,i,'Demi-journée'));
+  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj);
   notesWrap.appendChild(btnRow);
 
   inner.appendChild(notesWrap);
   card.appendChild(inner);
   return card;
+}
+
+
+// ── Generate break-time select (15min increments up to 3h)
+function makeBreakSelect(field, value, empId, periodKey, idx, locked){
+  const opts = [
+    ['','—'],['0.25','15 min'],['0.5','30 min'],['0.75','45 min'],
+    ['1','1h00'],['1.25','1h15'],['1.5','1h30'],['1.75','1h45'],
+    ['2','2h00'],['2.25','2h15'],['2.5','2h30'],['2.75','2h45'],['3','3h00']
+  ];
+  const sel = document.createElement('select');
+  sel.className = 'time-input';
+  sel.disabled = locked;
+  opts.forEach(([v,lbl])=>{
+    const o = document.createElement('option');
+    o.value = v; o.textContent = lbl;
+    if(String(value||'') === v) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', ()=>{
+    captureOriginal(empId,periodKey,idx,field,value||'');
+    liveCalc(empId,periodKey,idx,field,sel.value);
+    commitChange(empId,periodKey,idx,field,sel.value);
+  });
+  return sel;
+}
+
+// ── Mobile break select (larger for touch)
+function makeMobileBreakSelect(field, value, empId, periodKey, idx){
+  const opts = [
+    ['','—'],['0.25','15 min'],['0.5','30 min'],['0.75','45 min'],
+    ['1','1h00'],['1.25','1h15'],['1.5','1h30'],['1.75','1h45'],
+    ['2','2h00'],['2.25','2h15'],['2.5','2h30'],['2.75','2h45'],['3','3h00']
+  ];
+  const sel = document.createElement('select');
+  sel.className = 'mobile-time-input';
+  sel.style.cssText = 'font-size:16px;padding:10px 4px;width:100%;';
+  opts.forEach(([v,lbl])=>{
+    const o = document.createElement('option');
+    o.value = v; o.textContent = lbl;
+    if(String(value||'') === v) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', ()=>{
+    liveCalc(empId,periodKey,idx,field,sel.value);
+    commitChange(empId,periodKey,idx,field,sel.value);
+  });
+  return sel;
 }
 
 function quickFill(empId,periodKey,rowIdx,value){
@@ -1539,6 +1620,7 @@ function renderArchives(){
         <td class="text-xs mono">${dayLabel(d)}</td>
         <td class="mono text-xs">${row.start||'—'}</td>
         <td class="mono text-xs">${row.lunch||'—'}</td>
+      <td class="mono text-xs">${row.pause||'—'}</td>
         <td class="mono text-xs">${row.end||'—'}</td>
         <td class="total-cell text-xs">${w!==null?fmtMins(w):'—'}</td>
         <td class="text-xs">${hl(row.notes)}</td>
@@ -1936,6 +2018,7 @@ async function syncFullSheetToAirtable(eid, pk){
         start:           row.start     || '',
         end:             row.end       || '',
         lunch:           row.lunch     || '',
+        pause:           row.pause     || '',
         notes:           row.notes     || '',
         adminNote:       row.adminNote || '',
         periodeDePaie:   periodLabel,
@@ -2072,6 +2155,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
       start: row.start || '',
       end:   row.end   || '',
       lunch: row.lunch || '',
+      pause: row.pause || '',
       notes: row.notes || '',
       recordId: row.airtableRecordId || undefined
     };
