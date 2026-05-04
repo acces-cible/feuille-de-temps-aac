@@ -78,9 +78,10 @@
     .total-banner { padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   }
 
-  /* ── Responsive */
-  @media(max-width:1023px){ .desktop-only{display:none!important;} }
-  @media(min-width:1024px){ .mobile-only{display:none!important;} }
+  /* ── Responsive — mobile-only si écran tactile OU < 1280px */
+  @media(max-width:1279px){ .desktop-only{display:none!important;} }
+  @media(min-width:1280px){ .mobile-only{display:none!important;} }
+  @media(hover:none) and (pointer:coarse){ .desktop-only{display:none!important;} .mobile-only{display:block!important;} }
 
   /* ── Toast notifications */
   #toast-container { position:fixed; top:16px; right:16px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
