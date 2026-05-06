@@ -2212,6 +2212,18 @@ async function initPeriodAirtable(periodKey){
     });
     const result = await resp.json();
     if(resp.ok){
+      // Sauvegarder les recordIds localement pour que le re-sync utilise PATCH direct
+      if(result.records && result.records.length > 0){
+        result.records.forEach(({empId, date, recordId}) => {
+          const emp = DB.employees.find(e => e.airtableId === empId);
+          if(!emp) return;
+          const sheet = DB.timesheets[`${emp.id}_${periodKey}`];
+          if(!sheet) return;
+          const row = sheet.rows.find(r => r.date === date);
+          if(row) row.airtableRecordId = recordId;
+        });
+        save();
+      }
       toast(`✅ ${result.created} créé(s), ${result.skipped} existant(s)`, 'success', 6000);
     } else {
       toast(`Erreur: ${result.error}`, 'error');
