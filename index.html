@@ -576,8 +576,19 @@ function toggleAdminArea(){
 
 function tryAdmin(){
   const pw=document.getElementById('admin-pw').value;
-  if(pw===DB.adminPassword){ state.currentUser='admin'; state.view='admin'; checkPeriodReset(); render(); }
+  if(pw===DB.adminPassword){ state.currentUser='admin'; state.view='admin'; checkPeriodResetAdmin(); render(); }
   else document.getElementById('admin-err').classList.remove('hidden');
+}
+
+function checkPeriodResetAdmin(){
+  const p=PERIOD.current();
+  if(!DB.periodReminderResets[p.key]){
+    DB.periodReminderResets[p.key]=true;
+    DB.employees.forEach(e=>{e.reminderCount=0;});
+    save();
+    DB.employees.forEach(e=>{ if(e.airtableId) syncEmpPrefsToAirtable(e.id); });
+
+  }
 }
 
 function checkPeriodReset(){
@@ -588,8 +599,7 @@ function checkPeriodReset(){
     save();
     // Sync le reset vers Airtable pour tous les employés
     DB.employees.forEach(e=>{ if(e.airtableId) syncEmpPrefsToAirtable(e.id); });
-    // Initialiser automatiquement les records Airtable pour la nouvelle période
-    initPeriodAirtable(p.key);
+    // Note: initPeriodAirtable est appelé seulement par l'admin via checkPeriodResetAdmin()
   }
 }
 
@@ -618,7 +628,6 @@ function renderEmployee(){
     </div>
     <div class="flex items-center gap-2">
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
-      <button onclick="refreshFromAirtable()" data-refresh class="text-blue-200 hover:text-white text-base px-1" title="Actualiser depuis Airtable">🔄</button>
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
