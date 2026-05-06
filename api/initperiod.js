@@ -1,26 +1,18 @@
 const axios = require('axios');
 
-// POST /api/initperiod
-// Pré-crée les enregistrements vides dans Feuilles de temps pour une période
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   const { employees, dates } = req.body;
-  // employees = [{ airtableId, name }]
-  // dates = ['2026-05-04', '2026-05-05', ...]
-
   if (!employees?.length || !dates?.length) {
     return res.status(400).json({ error: 'employees et dates requis' });
   }
 
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID } = process.env;
   const TABLE_NAME = encodeURIComponent("Feuilles de temps");
-  const headers = {
-    Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-    'Content-Type': 'application/json'
-  };
+  const headers = { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
   const results = [];
@@ -30,30 +22,31 @@ module.exports = async function handler(req, res) {
     if (!emp.airtableId) continue;
 
     for (const date of dates) {
-      // Vérifier si un record existe déjà
       try {
-        const filter = encodeURIComponent(`AND({Date}='${date}',FIND('${emp.airtableId}',ARRAYJOIN({Employé},',')))`);
+        // Chercher si un record existe déjà
+        const filter = encodeURIComponent(`{Date}='${date}'`);
         const check = await axios.get(`${baseUrl}?filterByFormula=${filter}`, { headers });
+        const existing = check.data.records.find(r =>
+          (r.fields['Employé'] || []).includes(emp.airtableId)
+        );
 
-        if (check.data.records.length > 0) {
+        if (existing) {
+          // Record existe — retourner quand même son recordId
+          results.push({ empId: emp.airtableId, date, recordId: existing.id });
           skipped++;
           continue;
         }
 
-        // Créer le record vide avec seulement Employé + Date
+        // Créer le record vide
         const created_rec = await axios.post(baseUrl, {
-          fields: {
-            "Employé": [emp.airtableId],
-            "Date": date
-          }
+          fields: { "Employé": [emp.airtableId], "Date": date }
         }, { headers });
 
         results.push({ empId: emp.airtableId, date, recordId: created_rec.data.id });
         created++;
 
       } catch (err) {
-        const detail = err.response ? JSON.stringify(err.response.data) : err.message;
-        console.error(`Erreur ${emp.name} / ${date}:`, detail);
+        console.error(`Erreur ${emp.name} / ${date}:`, err.response?.data || err.message);
         errors++;
       }
     }
