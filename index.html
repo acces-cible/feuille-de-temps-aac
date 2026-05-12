@@ -1061,10 +1061,15 @@ function clearRow(empId,periodKey,rowIdx){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row = DB.timesheets[key].rows[rowIdx];
+const recordId = row.airtableRecordId;
   row.start=''; row.end=''; row.lunch=''; row.pause=''; row.notes='';
   save();
-  syncFullSheetToAirtable(empId, periodKey);
   render();
+  const emp = DB.employees.find(e => e.id === empId);
+  if(emp?.airtableId){
+    fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({empId:emp.airtableId,date:row.date,start:'',end:'',lunch:'',pause:'',notes:'',recordId,forceWrite:true})});
+  }
 }
 
 function quickFill(empId,periodKey,rowIdx,value){
@@ -2448,9 +2453,14 @@ async function init(){
   }
 
   render();
+  setInterval(()=>{
+    if(state.view==='employee' && currentEmp()){
+      loadSheetFromAirtable(currentEmp());
+    }
+  }, 2 * 60 * 1000);
 }
 
-// Ajouter l'animation spin manquante dans Tailwind CDN
+// Ajouter l'animation spin
 (function(){
   const s=document.createElement('style');
   s.textContent='@keyframes spin{to{transform:rotate(360deg)}}';
