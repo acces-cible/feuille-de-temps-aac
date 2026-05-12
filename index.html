@@ -2083,7 +2083,9 @@ async function syncFullSheetToAirtable(eid, pk){
   const periodLabel = PERIOD.airtableLabel(period.start, period.end);
 
   // Envoyer chaque ligne qui a des données — une requête par ligne
-  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
+const rowsWithData = sheet.rows.filter(r => 
+  r.start || r.end || r.notes || r.adminNote || r.airtableRecordId
+);
   dbg(`Sync: ${emp.name} — ${rowsWithData.length} ligne(s)`);
   dbg(`airtableId: ${emp.airtableId||'VIDE'}`);
   if(!emp.airtableId) dbg('⚠️ airtableId manquant!', 'error');
