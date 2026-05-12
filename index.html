@@ -2237,12 +2237,17 @@ async function resyncAllToAirtable(periodKey){
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
 
-  // Effacer les recordId locaux pour forcer une re-découverte
-  emps.forEach(emp => {
-    const sheet = DB.timesheets[`${emp.id}_${periodKey}`];
-    if(sheet) sheet.rows.forEach(r => delete r.airtableRecordId);
-  });
+  // NE PAS effacer les recordId : on utilise le PATCH direct quand disponible.
+  // Le fallback AND(date, employé) dans syncairtable.js prend le relais si un ID manque.
+  let done = 0;
+  for(const emp of emps){
+    await syncFullSheetToAirtable(emp.id, periodKey);
+    done++;
+  }
   save();
+  toast(`Re-sync terminé pour ${done} employé(s).`, 'success');
+  render();
+}
 
   let done = 0;
   for(const emp of emps){
