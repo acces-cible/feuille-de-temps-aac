@@ -28,10 +28,10 @@ module.exports = async function handler(req, res) {
     fields["Pause"] = body.pause || '';
     fields["Notes"] = body.notes || '';
   } else {
-    if (body.start !== undefined && body.start !== '') fields["Début"] = body.start.toString();
-    if (body.end   !== undefined && body.end   !== '') fields["Fin"]   = body.end.toString();
-    if (body.lunch !== undefined && body.lunch !== '') fields["Dîner"] = body.lunch.toString();
-    if (body.pause !== undefined && body.pause !== '') fields["Pause"] = body.pause.toString();
+if (body.start !== undefined) fields["Début"] = body.start || '';
+if (body.end   !== undefined) fields["Fin"]   = body.end   || '';
+if (body.lunch !== undefined) fields["Dîner"] = body.lunch || '';
+if (body.pause !== undefined) fields["Pause"] = body.pause || '';
     if (body.notes !== undefined)                      fields["Notes"] = body.notes;
   }
   if (body.adminNote !== undefined) fields["Note Admin"] = body.adminNote;
