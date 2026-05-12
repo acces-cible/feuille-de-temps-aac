@@ -2002,7 +2002,7 @@ function unarchiveEmployee(empId){
 function removeEmployee(empId){
   DB.employees=DB.employees.filter(e=>e.id!==empId);
   save(); state.showRemoveConfirm=null; render();
-}
+}<
 
 // ================================================================
 //  AIRTABLE READ
@@ -2236,18 +2236,6 @@ async function initPeriodAirtable(periodKey){
 async function resyncAllToAirtable(periodKey){
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
-
-  // NE PAS effacer les recordId : on utilise le PATCH direct quand disponible.
-  // Le fallback AND(date, employé) dans syncairtable.js prend le relais si un ID manque.
-  let done = 0;
-  for(const emp of emps){
-    await syncFullSheetToAirtable(emp.id, periodKey);
-    done++;
-  }
-  save();
-  toast(`Re-sync terminé pour ${done} employé(s).`, 'success');
-  render();
-}
 
   let done = 0;
   for(const emp of emps){
