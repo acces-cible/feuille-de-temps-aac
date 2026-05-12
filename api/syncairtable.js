@@ -29,7 +29,7 @@ module.exports = async function handler(req, res) {
   if (body.approved  !== undefined)                          fields["Approuvé"]   = body.approved === true;
 
   try {
-    // PATCH direct si recordId connu
+    // ── 1. PATCH direct si recordId connu (chemin rapide) ────────────────────
     if (body.recordId) {
       try {
         await axios.patch(`${baseUrl}/${body.recordId}`, { fields }, { headers });
@@ -37,20 +37,23 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ message: 'OK', recordId: body.recordId });
       } catch (e) {
         if (e.response?.status !== 404 && e.response?.status !== 422) throw e;
-        console.warn(`PATCH ${body.recordId} échoué, fallback recherche`);
+        console.warn(`PATCH ${body.recordId} échoué (${e.response?.status}), fallback recherche`);
       }
     }
 
-    // Recherche par date seulement, puis filtre employé en JS
-    const filter = encodeURIComponent(`{Date}='${date}'`);
-    const searchRes = await axios.get(`${baseUrl}?filterByFormula=${filter}`, { headers });
-    const empRecords = searchRes.data.records.filter(r =>
-      (r.fields['Employé'] || []).includes(empId)
+    // ── 2. Recherche par AND(date, employé) directement dans Airtable ────────
+    // On filtre les deux critères côté Airtable pour éviter les problèmes de
+    // pagination : si la table a des centaines de lignes pour une même date,
+    // un filtre sur date seule + filtre JS ne verrait que la première page.
+    const filter = encodeURIComponent(
+      `AND({Date}='${date}', FIND('${empId}', ARRAYJOIN({Employé}, ',')))`
     );
+    const searchRes = await axios.get(`${baseUrl}?filterByFormula=${filter}`, { headers });
+    const empRecords = searchRes.data.records;
 
     console.log(`Trouvé ${empRecords.length} record(s) pour ${empId} / ${date}`);
 
-    // Déduplication
+    // Déduplication : garder le premier, supprimer les doublons
     if (empRecords.length > 1) {
       await Promise.all(empRecords.slice(1).map(r =>
         axios.delete(`${baseUrl}/${r.id}`, { headers })
@@ -64,7 +67,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ message: 'OK', recordId: empRecords[0].id });
     }
 
-    // Créer seulement si données présentes
+    // ── 3. Créer seulement si des données sont présentes ─────────────────────
     const hasContent = (body.start && body.start !== '')
                     || (body.end   && body.end   !== '')
                     || (body.notes && body.notes !== '');
