@@ -20,13 +20,22 @@ module.exports = async function handler(req, res) {
   // Champs à mettre à jour — sans Employé
   const fields = {};
   fields["Date"] = date;
-  if (body.start     !== undefined && body.start     !== '') fields["Début"]      = body.start.toString();
-  if (body.end       !== undefined && body.end       !== '') fields["Fin"]        = body.end.toString();
-  if (body.lunch     !== undefined && body.lunch     !== '') fields["Dîner"]      = body.lunch.toString();
-  if (body.pause     !== undefined && body.pause     !== '') fields["Pause"]      = body.pause.toString();
-  if (body.notes     !== undefined)                          fields["Notes"]      = body.notes;
-  if (body.adminNote !== undefined)                          fields["Note Admin"] = body.adminNote;
-  if (body.approved  !== undefined)                          fields["Approuvé"]   = body.approved === true;
+  if (body.forceWrite) {
+    // Effacement explicite — écrire même les valeurs vides
+    fields["Début"] = body.start || '';
+    fields["Fin"]   = body.end   || '';
+    fields["Dîner"] = body.lunch || '';
+    fields["Pause"] = body.pause || '';
+    fields["Notes"] = body.notes || '';
+  } else {
+    if (body.start !== undefined && body.start !== '') fields["Début"] = body.start.toString();
+    if (body.end   !== undefined && body.end   !== '') fields["Fin"]   = body.end.toString();
+    if (body.lunch !== undefined && body.lunch !== '') fields["Dîner"] = body.lunch.toString();
+    if (body.pause !== undefined && body.pause !== '') fields["Pause"] = body.pause.toString();
+    if (body.notes !== undefined)                      fields["Notes"] = body.notes;
+  }
+  if (body.adminNote !== undefined) fields["Note Admin"] = body.adminNote;
+  if (body.approved  !== undefined) fields["Approuvé"]   = body.approved === true;
 
   try {
     // ── 1. PATCH direct si recordId connu (chemin rapide) ────────────────────
