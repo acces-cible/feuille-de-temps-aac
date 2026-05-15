@@ -2349,7 +2349,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
 
 
 function clearChangeLog(){
-  if(!confirm('Effacer tout l’historique des modifications?')) return;
+  if(!confirm("Effacer tout l'historique des modifications?")) return;
   DB.changeLog=[];
   save();
   render();
@@ -2464,7 +2464,7 @@ async function init(){
             : (apiEmp.reminderCount ?? local?.reminderCount ?? 0),
           // Mot de passe: Airtable en priorité, fallback localStorage
           password:      apiEmp.password !== undefined ? apiEmp.password : (local?.password ?? null),
-          archived:      local?.archived      ?? false,
+          archived:      apiEmp.archived      ?? local?.archived      ?? false,
           // Migration timesheets
           _oldId:        local?.id || null,
         };
