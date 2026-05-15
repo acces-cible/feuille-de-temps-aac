@@ -2104,6 +2104,7 @@ const rowsWithData = sheet.rows.filter(r =>
         notes:           row.notes     || '',
         adminNote:       row.adminNote || '',
         periodeDePaie:   periodLabel,
+        total:           (()=>{ const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0,p=parseTime(row.pause)||0; return (s!==null&&e!==null)?fmtMins(Math.max(0,e-s-l-p)):''; })(),
         recordId:        row.airtableRecordId || undefined
       };
       try{
