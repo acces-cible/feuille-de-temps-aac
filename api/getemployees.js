@@ -25,6 +25,7 @@ module.exports = async function handler(req, res) {
       autoFill:      r.fields['AutoFill']      === true,
       reminderCount: r.fields['Rappels']       || 0,
       password:      r.fields['Mot de passe']  || null,
+      archived:      r.fields['Archivé']       === true,
     }));
 
     return res.status(200).json(employees);
