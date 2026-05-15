@@ -1486,14 +1486,22 @@ async function sendReminder(empId) {
     toast('Erreur : ID Airtable manquant pour cet employé.', 'error');
     return;
   }
+  const msg = DB.reminderTemplate.replace(/\[Prénom\]/g, firstName(emp.name));
   try {
     const resp = await fetch('/api/updateemployee', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ airtableId: emp.airtableId, sendReminder: true })
+      body: JSON.stringify({
+        airtableId: emp.airtableId,
+        sendReminder: true,
+        phone: emp.phone || '',
+        message: msg
+      })
     });
     if (resp.ok) {
-      toast(`Rappel envoyé à ${emp.name}.`, 'success');
+      const json = await resp.json();
+      const smsOk = json.sms === 'sent';
+      toast(`Rappel envoyé à ${emp.name}${smsOk ? ' 📱' : ' (sans SMS)'}`, smsOk ? 'success' : 'info');
     } else {
       toast("Erreur lors de l'envoi du rappel.", 'error');
     }
@@ -1503,23 +1511,6 @@ async function sendReminder(empId) {
 }
 
 async function remindAll(){
-  const toRemind = DB.employees.filter(e => e.airtableId);
-  if(toRemind.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
-  let sent = 0, errors = 0;
-  for(const emp of toRemind){
-    try{
-      const resp = await fetch('/api/updateemployee', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ airtableId: emp.airtableId, sendReminder: true })
-      });
-      if(resp.ok) sent++; else errors++;
-    } catch(e){ errors++; }
-  }
-  if(errors > 0) toast(`Rappels envoyés: ${sent}. Erreurs: ${errors}.`, 'error');
-  else toast(`${sent} rappel(s) envoyé(s) !`, 'success');
-  render();
-}
 
 // ── Staff tab
 function renderStaff(){
