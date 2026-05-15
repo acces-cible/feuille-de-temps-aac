@@ -1511,6 +1511,33 @@ async function sendReminder(empId) {
 }
 
 async function remindAll(){
+  const toRemind = DB.employees.filter(e => e.airtableId && !e.archived);
+  if(toRemind.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
+  let sent = 0, smsSent = 0, errors = 0;
+  for(const emp of toRemind){
+    const msg = DB.reminderTemplate.replace(/\[Prénom\]/g, firstName(emp.name));
+    try{
+      const resp = await fetch('/api/updateemployee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          airtableId: emp.airtableId,
+          sendReminder: true,
+          phone: emp.phone || '',
+          message: msg
+        })
+      });
+      if(resp.ok){
+        sent++;
+        const json = await resp.json();
+        if(json.sms === 'sent') smsSent++;
+      } else errors++;
+    } catch(e){ errors++; }
+  }
+  if(errors > 0) toast(`Rappels: ${sent} OK, ${smsSent} SMS, ${errors} erreurs`, 'error');
+  else toast(`${sent} rappel(s) envoyé(s), ${smsSent} SMS 📱`, 'success');
+  render();
+}
 
 // ── Staff tab
 function renderStaff(){
