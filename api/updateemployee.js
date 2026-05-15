@@ -65,8 +65,8 @@ else if(phone.length === 11 && phone.startsWith('1')) phone = '+' + phone;
 
     try {
       const smsResp = await axios.post(
-      `https://www.traccar.org/sms/?token=${encodeURIComponent(TRACCAR_TOKEN)}`,
-      { to: phone, message },
+      'https://www.traccar.org/sms/',
+      { token: TRACCAR_TOKEN, to: phone, message },
       { headers: { 'Content-Type': 'application/json' } }
       );
       console.log(`SMS envoyé à ${phone}:`, smsResp.status);
