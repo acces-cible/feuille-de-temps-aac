@@ -1943,8 +1943,13 @@ function saveEditEmp(empId){
   emp.defaultLunch=document.getElementById('ee-lunch').value.trim();
   const modeEl=document.querySelector('input[name="ee-inputmode"]:checked');
   if(modeEl) emp.inputMode=modeEl.value;
+  emp.adminNotes=document.getElementById('ee-notes').value;
   save(); state.showEditEmpModal=null; render();
   syncEmpPrefsToAirtable(empId);
+  if(emp.airtableId){
+    fetch('/api/updateemployee',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({airtableId:emp.airtableId, adminNotes:emp.adminNotes})});
+  }
 }
 
 function renderEmpPwResetModal(){
