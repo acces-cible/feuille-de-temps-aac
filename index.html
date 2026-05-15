@@ -2245,6 +2245,11 @@ async function resyncAllToAirtable(periodKey){
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
 
+  // Libérer tous les verrous bloqués
+  _syncLocks.clear();
+
+  toast(`Sync en cours pour ${emps.length} employé(s)…`, 'info', 10000);
+
   let done = 0;
   for(const emp of emps){
     await syncFullSheetToAirtable(emp.id, periodKey);
