@@ -1813,14 +1813,9 @@ function renderPasswordModal(){
       <div><label class="field-label block mb-1">Confirmer</label><input type="password" id="pw-confirm" class="w-full"></div>
       <div id="pw-err" class="text-red-500 text-xs hidden"></div>
     </div>
-<div class="border-t pt-3">
-        <label class="field-label block mb-1">Notes administrateur</label>
-        <textarea id="ee-notes" rows="4" class="w-full" style="resize:vertical;font-size:13px" placeholder="Notes internes sur l'employé…">${emp.adminNotes||''}</textarea>
-        <div class="text-xs text-slate-400 mt-1">Synchronisé avec Airtable. Visible seulement par l'admin.</div>
-      </div>
-    <div class="flex justify-end gap-2 mt-4">
-      <button onclick="state.showEditEmpModal=null;render()" class="btn btn-gray">Annuler</button>
-      <button onclick="saveEditEmp('${empId}')" class="btn btn-navy">Sauvegarder</button>
+<div class="flex justify-end gap-2 mt-4">
+      <button onclick="state.showPasswordModal=false;render()" class="btn btn-gray">Annuler</button>
+      <button onclick="changeAdminPassword()" class="btn btn-navy">Changer</button>
     </div>`;
   bd.appendChild(m); return bd;
 }
@@ -1923,6 +1918,11 @@ function renderEditEmpModal(){
         </div>
       </div>
     </div>
+    <div class="border-t pt-3">
+        <label class="field-label block mb-1">Notes administrateur</label>
+        <textarea id="ee-notes" rows="4" class="w-full" style="resize:vertical;font-size:13px" placeholder="Notes internes sur l'employé…">${emp.adminNotes||''}</textarea>
+        <div class="text-xs text-slate-400 mt-1">Synchronisé avec Airtable. Visible seulement par l'admin.</div>
+      </div>
     <div class="flex justify-end gap-2 mt-4">
       <button onclick="state.showEditEmpModal=null;render()" class="btn btn-gray">Annuler</button>
       <button onclick="saveEditEmp('${empId}')" class="btn btn-navy">Sauvegarder</button>
