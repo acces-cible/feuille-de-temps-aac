@@ -17,28 +17,27 @@ module.exports = async function handler(req, res) {
   const headers = { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
-  // Champs à mettre à jour — sans Employé
   const fields = {};
   fields["Date"] = date;
   if (body.forceWrite) {
-    // Effacement explicite — écrire même les valeurs vides
     fields["Début"] = body.start || '';
     fields["Fin"]   = body.end   || '';
     fields["Dîner"] = body.lunch || '';
     fields["Pause"] = body.pause || '';
     fields["Notes"] = body.notes || '';
+    fields["Total"] = body.total || '';
   } else {
-if (body.start !== undefined) fields["Début"] = body.start || '';
-if (body.end   !== undefined) fields["Fin"]   = body.end   || '';
-if (body.lunch !== undefined) fields["Dîner"] = body.lunch || '';
-if (body.pause !== undefined) fields["Pause"] = body.pause || '';
-    if (body.notes !== undefined)                      fields["Notes"] = body.notes;
+    if (body.start !== undefined) fields["Début"] = body.start || '';
+    if (body.end   !== undefined) fields["Fin"]   = body.end   || '';
+    if (body.lunch !== undefined) fields["Dîner"] = body.lunch || '';
+    if (body.pause !== undefined) fields["Pause"] = body.pause || '';
+    if (body.notes !== undefined) fields["Notes"] = body.notes;
+    if (body.total !== undefined && body.total !== '') fields["Total"] = body.total;
   }
   if (body.adminNote !== undefined) fields["Note Admin"] = body.adminNote;
   if (body.approved  !== undefined) fields["Approuvé"]   = body.approved === true;
 
   try {
-    // ── 1. PATCH direct si recordId connu (chemin rapide) ────────────────────
     if (body.recordId) {
       try {
         await axios.patch(`${baseUrl}/${body.recordId}`, { fields }, { headers });
@@ -50,10 +49,6 @@ if (body.pause !== undefined) fields["Pause"] = body.pause || '';
       }
     }
 
-    // ── 2. Recherche par AND(date, employé) directement dans Airtable ────────
-    // On filtre les deux critères côté Airtable pour éviter les problèmes de
-    // pagination : si la table a des centaines de lignes pour une même date,
-    // un filtre sur date seule + filtre JS ne verrait que la première page.
     const filter = encodeURIComponent(
       `AND({Date}='${date}', FIND('${empId}', ARRAYJOIN({Employé}, ',')))`
     );
@@ -62,7 +57,6 @@ if (body.pause !== undefined) fields["Pause"] = body.pause || '';
 
     console.log(`Trouvé ${empRecords.length} record(s) pour ${empId} / ${date}`);
 
-    // Déduplication : garder le premier, supprimer les doublons
     if (empRecords.length > 1) {
       await Promise.all(empRecords.slice(1).map(r =>
         axios.delete(`${baseUrl}/${r.id}`, { headers })
@@ -76,7 +70,6 @@ if (body.pause !== undefined) fields["Pause"] = body.pause || '';
       return res.status(200).json({ message: 'OK', recordId: empRecords[0].id });
     }
 
-    // ── 3. Créer seulement si des données sont présentes ─────────────────────
     const hasContent = (body.start && body.start !== '')
                     || (body.end   && body.end   !== '')
                     || (body.notes && body.notes !== '');
