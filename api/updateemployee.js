@@ -46,7 +46,11 @@ module.exports = async function handler(req, res) {
 
   // ── 2. Envoyer un SMS si sendReminder=true ────────────────────────────────
   if (body.sendReminder === true) {
-    const phone   = body.phone   || '';
+    let phone = body.phone || '';
+// Normaliser le numéro: (438) 938-5407 → +14385385407
+phone = phone.replace(/\D/g, ''); // enlever tout sauf les chiffres
+if(phone.length === 10) phone = '+1' + phone; // ajouter +1 si 10 chiffres
+else if(phone.length === 11 && phone.startsWith('1')) phone = '+' + phone;
     const message = body.message || "Rappel : n'oublie pas de soumettre ta feuille de temps. Merci!";
 
     if (!phone) {
