@@ -1082,6 +1082,87 @@ function quickFill(empId,periodKey,rowIdx,value){
 }
 
 const _adminNoteTimers = {};
+const _archiveEditTimers = {};
+
+function archiveEditField(empId, periodKey, rowDate, field, value){
+  const key = `${empId}_${periodKey}`;
+  const sheet = DB.timesheets[key]; if(!sheet) return;
+  const row = sheet.rows.find(r => r.date === rowDate); if(!row) return;
+  row[field] = value;
+  // Mise à jour live du total de la ligne
+  const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0,p=parseTime(row.pause)||0;
+  const worked=(s!==null&&e!==null)?Math.max(0,e-s-l-p):null;
+  const totalEl=document.getElementById(`arch-total-${empId}-${rowDate}`);
+  if(totalEl) totalEl.textContent=worked!==null?fmtMins(worked):'—';
+  sheet.totalMinutes=calcSheetTotal(sheet);
+  save();
+  const timerKey=`arch-${empId}-${rowDate}`;
+  clearTimeout(_archiveEditTimers[timerKey]);
+  _archiveEditTimers[timerKey]=setTimeout(()=>{
+    const emp=DB.employees.find(e=>e.id===empId); if(!emp?.airtableId) return;
+    const period=PERIOD.list(24).find(p=>p.key===periodKey); if(!period) return;
+    const periodLabel=PERIOD.airtableLabel(period.start,period.end);
+    fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({empId:emp.airtableId,date:rowDate,start:row.start||'',end:row.end||'',
+        lunch:row.lunch||'',pause:row.pause||'',notes:row.notes||'',adminNote:row.adminNote||'',
+        periodeDePaie:periodLabel,recordId:row.airtableRecordId||undefined})
+    }).then(async r=>{
+      if(r.ok){const j=await r.json();if(j.recordId){row.airtableRecordId=j.recordId;save();}}
+    }).catch(console.error);
+  }, 1500);
+}
+
+async function approveArchiveEmployee(empId, periodKey){
+  const key=`${empId}_${periodKey}`;
+  if(!DB.timesheets[key]){
+    const period=PERIOD.list(24).find(p=>p.key===periodKey);
+    if(period) getOrCreateSheet(DB,empId,periodKey,period.start); else return;
+  }
+  DB.timesheets[key].approved=true;
+  DB.timesheets[key].approvedAt=new Date().toISOString();
+  DB.timesheets[key].totalMinutes=calcSheetTotal(DB.timesheets[key]);
+  save();
+  const empName=DB.employees.find(e=>e.id===empId)?.name||'Employé';
+  toast(`${empName} — approuvé ✓`,'success');
+  render();
+  await syncApprovalToAirtable(empId,periodKey,true);
+}
+
+async function approveAllArchiveVisible(){
+  const summaryPeriods=state.archiveFilter.period
+    ?[PERIOD.list(24).find(p=>p.key===state.archiveFilter.period)].filter(Boolean)
+    :PERIOD.list(24);
+  const summaryEmps=state.archiveFilter.name
+    ?[DB.employees.find(e=>e.id===state.archiveFilter.name)].filter(Boolean)
+    :DB.employees.filter(e=>!e.archived);
+  const toSync=[];
+  summaryEmps.forEach(emp=>{
+    summaryPeriods.forEach(period=>{
+      const key=`${emp.id}_${period.key}`;
+      const sheet=DB.timesheets[key];
+      if(sheet&&!sheet.approved&&calcSheetTotal(sheet)>0){
+        sheet.approved=true; sheet.approvedAt=new Date().toISOString();
+        sheet.totalMinutes=calcSheetTotal(sheet);
+        toSync.push({empId:emp.id,periodKey:period.key});
+      }
+    });
+  });
+  if(toSync.length===0){toast('Aucune feuille à approuver.','info');return;}
+  save(); autoBackup(DB,'approve-archives');
+  toast(`${toSync.length} feuille(s) approuvée(s) ✓`,'success');
+  render();
+  for(const {empId,periodKey} of toSync) await syncApprovalToAirtable(empId,periodKey,true);
+}
+
+function unlockArchiveSheet(empId, periodKey){
+  const key=`${empId}_${periodKey}`;
+  if(DB.timesheets[key]){DB.timesheets[key].approved=false;DB.timesheets[key].approvedAt=null;}
+  save();
+  const empName=DB.employees.find(e=>e.id===empId)?.name||'Employé';
+  toast(`${empName} — déverrouillé`,'info');
+  syncApprovalToAirtable(empId,periodKey,false);
+  render();
+}
 function saveAdminNote(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
@@ -1645,6 +1726,8 @@ function renderArchives(){
   const frag=document.createDocumentFragment();
   const periods=PERIOD.list(24);
   const allEmps=DB.employees.slice().sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
+
+  // ── Filtres
   const filters=el('div','card p-4 mb-4 flex flex-wrap gap-3 items-end');
   const loadLbl=state.archivesLoading?'⏳ Chargement…':'🔄 Charger depuis Airtable';
   filters.innerHTML=`
@@ -1667,23 +1750,56 @@ function renderArchives(){
 
   const summaryEmp=state.archiveFilter.name?[DB.employees.find(e=>e.id===state.archiveFilter.name)]:allEmps;
   const summaryPeriods=state.archiveFilter.period?[periods.find(p=>p.key===state.archiveFilter.period)]:periods;
+  const hasPeriodFilter=!!state.archiveFilter.period;
+
+  // ── Barre d'actions globale (seulement si période filtrée)
+  if(hasPeriodFilter){
+    const actionBar=el('div','mb-4 flex flex-wrap gap-2');
+    actionBar.innerHTML=`
+      <button onclick="approveAllArchiveVisible()" class="btn btn-green">✓✓ Approuver tous visibles</button>`;
+    frag.appendChild(actionBar);
+  }
+
+  // ── Récapitulatif avec bouton par employé
   const summaryCard=el('div','card p-4 mb-4');
   summaryCard.innerHTML=`
     <h3 class="text-sm font-semibold text-slate-700 mb-2">Récapitulatif</h3>
-    <table><thead><tr class="nav-navy"><th class="text-left pl-3">Employé</th><th>Total heures</th></tr></thead>
+    <table><thead><tr class="nav-navy">
+      <th class="text-left pl-3">Employé</th>
+      <th>Total heures</th>
+      ${hasPeriodFilter?'<th>Statut</th><th></th>':''}
+    </tr></thead>
     <tbody>${(summaryEmp||[]).filter(Boolean).map(emp=>{
       const tot=(summaryPeriods||[]).filter(Boolean).reduce((s,p)=>{
         const k=`${emp.id}_${p.key}`; return s+(DB.timesheets[k]?calcSheetTotal(DB.timesheets[k]):0);
       },0);
-      return `<tr><td class="text-left pl-3">${emp.name}</td><td class="total-cell">${fmtMins(tot)}</td></tr>`;
+      const sheet=hasPeriodFilter?DB.timesheets[`${emp.id}_${state.archiveFilter.period}`]:null;
+      const approved=sheet?.approved;
+      return `<tr>
+        <td class="text-left pl-3">${emp.name}</td>
+        <td class="total-cell">${fmtMins(tot)}</td>
+        ${hasPeriodFilter?`
+          <td>${approved
+            ?'<span class="badge-approved">✓ Approuvé</span>'
+            :'<span class="badge-pending">En attente</span>'}
+          </td>
+          <td class="text-right pr-2">${approved
+            ?`<button onclick="unlockArchiveSheet('${emp.id}','${state.archiveFilter.period}')" class="btn btn-gray text-xs">🔓 Déverrouiller</button>`
+            :tot>0?`<button onclick="approveArchiveEmployee('${emp.id}','${state.archiveFilter.period}')" class="btn btn-green text-xs">✓ Approuver</button>`:''}
+          </td>`:''}
+      </tr>`;
     }).join('')}</tbody></table>`;
   frag.appendChild(summaryCard);
 
+  // ── Tableau détaillé
   const search=state.archiveSearch;
   function hl(text){
     if(!search||!text) return text||'';
     return text.replace(new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'), '<mark class="highlight-search">$1</mark>');
   }
+  const breakOpts=(['','0.25','0.5','0.75','1','1.25','1.5','1.75','2','2.5','3']);
+  const breakLabels=(['—','15m','30m','45m','1h00','1h15','1h30','1h45','2h00','2h30','3h00']);
+
   let rows=[];
   (summaryPeriods||[]).filter(Boolean).forEach(p=>{
     (summaryEmp||[]).filter(Boolean).forEach(emp=>{
@@ -1694,39 +1810,69 @@ function renderArchives(){
       });
     });
   });
+
   const detailCard=el('div','card overflow-x-auto');
-  detailCard.innerHTML=`<table>
-    <thead><tr class="nav-navy">
-      <th class="text-left pl-3">Employé</th><th>Période</th><th>Date</th>
-      <th>Début</th><th>Dîner</th><th>Fin</th><th>Total</th><th>Notes</th><th>Statut</th>
-    </tr></thead>
-    <tbody>${rows.map(({emp,period,row,sheet})=>{
-      const d=new Date(row.date+'T00:00:00');
-      const w=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch));
-      return `<tr class="${isWeekend(d)?'bg-weekend':'bg-day'}">
+  const table=document.createElement('table');
+  table.innerHTML=`<thead><tr class="nav-navy">
+    <th class="text-left pl-3">Employé</th><th>Période</th><th>Date</th>
+    <th>Début</th><th>Dîner</th><th>Fin</th><th>Pause</th><th>Total</th><th>Notes</th><th>Statut</th>
+  </tr></thead>`;
+  const tbody=document.createElement('tbody');
+
+  if(rows.length===0){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td colspan="10" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
+    tbody.appendChild(tr);
+  }
+
+  rows.forEach(({emp,period,row,sheet})=>{
+    const d=new Date(row.date+'T00:00:00');
+    const w=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
+    const tr=document.createElement('tr');
+    tr.className=isWeekend(d)?'bg-weekend':'bg-day';
+
+    if(sheet.approved){
+      tr.innerHTML=`
         <td class="text-left pl-3 text-xs font-medium">${emp.name}</td>
         <td class="text-xs">${PERIOD.label(period.start,period.end)}</td>
         <td class="text-xs mono">${dayLabel(d)}</td>
         <td class="mono text-xs">${row.start||'—'}</td>
         <td class="mono text-xs">${row.lunch||'—'}</td>
-      <td class="mono text-xs">${row.pause||'—'}</td>
         <td class="mono text-xs">${row.end||'—'}</td>
-        <td class="total-cell text-xs">${w!==null?fmtMins(w):'—'}</td>
+        <td class="mono text-xs">${row.pause||'—'}</td>
+        <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
         <td class="text-xs">${hl(row.notes)}</td>
-        <td>${sheet.approved
-          ?`<span class="badge-approved">✓ Approuvé</span> <button onclick="unlockSheet('${emp.id}','${period.key}')" class="btn btn-gray text-xs">🔓</button>`
-          :`<button onclick="approveSheet('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button>`}</td>
-      </tr>`;
-    }).join('')}
-    ${rows.length===0?'<tr><td colspan="9" class="text-center text-slate-400 py-6">Aucun résultat.</td></tr>':''}
-    </tbody></table>`;
+        <td><span class="badge-approved">✓ Approuvé</span></td>`;
+    } else {
+      const lOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.lunch||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
+      const pOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.pause||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
+      tr.innerHTML=`
+        <td class="text-left pl-3 text-xs font-medium">${emp.name}</td>
+        <td class="text-xs">${PERIOD.label(period.start,period.end)}</td>
+        <td class="text-xs mono">${dayLabel(d)}</td>
+        <td><input type="text" class="time-input" value="${row.start||''}" placeholder="—"
+          oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','start',this.value)"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','start',this.value)"/></td>
+        <td><select class="time-input" style="width:68px"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','lunch',this.value)">${lOpts}</select></td>
+        <td><input type="text" class="time-input" value="${row.end||''}" placeholder="—"
+          oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','end',this.value)"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','end',this.value)"/></td>
+        <td><select class="time-input" style="width:68px"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
+        <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
+        <td><input type="text" class="time-input" style="width:100px" value="${(row.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…"
+          oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/></td>
+        <td><button onclick="approveArchiveEmployee('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button></td>`;
+    }
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  detailCard.appendChild(table);
   frag.appendChild(detailCard);
   return frag;
-}
-
-function exportFiltered(){
-  downloadJSON({exported:new Date().toISOString(),filter:state.archiveFilter,db:DB},
-    `fdt_export_${new Date().toISOString().slice(0,10)}.json`);
 }
 
 // ================================================================
@@ -2086,9 +2232,12 @@ async function loadSheetFromAirtable(emp, periodOverride){
 }
 
 async function loadArchivePeriod(periodKey){
-  if(_archiveLoadedPeriods.has(periodKey)) return;
   const period = PERIOD.list(24).find(p => p.key === periodKey);
   if(!period) return;
+  if(_archiveLoadedPeriods.has(periodKey)){
+    render(); // ← déjà chargé, juste re-render
+    return;
+  }
   state.archivesLoading = true; render();
   await Promise.allSettled(DB.employees.map(emp => loadSheetFromAirtable(emp, period)));
   _archiveLoadedPeriods.add(periodKey);
