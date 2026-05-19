@@ -758,54 +758,12 @@ function renderEmpHistory(emp){
   content.appendChild(info);
 
   const deskWrap=el('div','desktop-only card overflow-x-auto mb-4');
-  const table=document.createElement('table');
-  table.innerHTML=`<thead><tr class="nav-navy">
-    <th class="text-left pl-3" style="min-width:130px">Journée</th>
-    <th style="min-width:82px">Début</th>
-    <th style="min-width:82px">Dîner</th>
-    <th style="min-width:82px">Fin</th>
-    <th style="min-width:82px">Pause</th>
-    <th style="min-width:80px">Total</th>
-    <th style="min-width:220px">Notes</th>
-  </tr></thead>`;
-  const tbody=document.createElement('tbody');
-  sheet.rows.forEach(row=>{
-    const d=new Date(row.date+'T00:00:00');
-    const tr=document.createElement('tr');
-    tr.className=isWeekend(d)?'bg-weekend':'bg-day';
-    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
-    tr.innerHTML=`
-      <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
-      <td class="mono text-sm">${row.start||'—'}</td>
-      <td class="mono text-sm">${row.lunch||'—'}</td>
-      <td class="mono text-sm">${row.end||'—'}</td>
-      <td class="mono text-sm">${row.pause||'—'}</td>
-      <td class="total-cell">${worked!==null?fmtMins(worked):'—'}</td>
-      <td class="text-xs text-slate-600">${row.notes||''}</td>`;
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  deskWrap.appendChild(table);
+  deskWrap.appendChild(buildDesktopTable(sheet, false, emp.id, selPeriod));
   content.appendChild(deskWrap);
 
   const mobWrap=el('div','mobile-only');
-  sheet.rows.forEach(row=>{
-    const d=new Date(row.date+'T00:00:00');
-    const weekend=isWeekend(d);
-    const card=el('div',`mobile-day-card ${weekend?'weekend':'weekday'}`);
-    const worked=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
-    card.innerHTML=`<div class="px-4 py-3">
-      <div class="flex items-center justify-between mb-1">
-        <div class="font-semibold text-slate-700 capitalize text-sm">${dayLabelLong(d)}</div>
-        <div class="mono font-bold text-blue-900">${worked!==null?fmtMins(worked):'—'}</div>
-      </div>
-      <div class="flex gap-4 text-sm text-slate-500">
-        ${row.start?`<span>${row.start}</span><span>→</span><span>${row.end||'—'}</span>`:'<span class="italic text-slate-300">Aucune entrée</span>'}
-        ${row.lunch?`<span class="text-slate-400">🍽 ${row.lunch}</span>`:''}
-      </div>
-      ${row.notes?`<div class="text-xs text-slate-400 mt-1">📝 ${row.notes}</div>`:''}
-    </div>`;
-    mobWrap.appendChild(card);
+  sheet.rows.forEach((row,i)=>{
+    mobWrap.appendChild(buildMobileCard(row, i, sheet.approved, emp.id, selPeriod.key));
   });
   content.appendChild(mobWrap);
 
