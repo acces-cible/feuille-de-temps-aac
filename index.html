@@ -1821,8 +1821,12 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
   const detailCard=el('div','card overflow-x-auto');
   const table=document.createElement('table');
   table.innerHTML=`<thead><tr class="nav-navy">
-    <th class="text-left pl-3">Employé</th><th>Période</th><th>Date</th>
-    <th>Début</th><th>Dîner</th><th>Fin</th><th>Pause</th><th>Total</th><th>Notes</th><th>Statut</th>
+    ${!state.archiveFilter.name?'<th class="text-left pl-3" style="min-width:110px">Employé</th>':''}
+    ${!hasPeriodFilter?'<th style="min-width:100px">Période</th>':''}
+    <th style="min-width:70px">Date</th>
+    <th style="min-width:72px">Début</th><th style="min-width:65px">Dîner</th>
+    <th style="min-width:72px">Fin</th><th style="min-width:65px">Pause</th>
+    <th style="min-width:60px">Total</th><th>Notes</th><th style="min-width:90px">Statut</th>
   </tr></thead>`;
   const tbody=document.createElement('tbody');
 
@@ -1840,9 +1844,9 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
 
     if(sheet.approved){
       tr.innerHTML=`
-        <td class="text-left pl-3 text-xs font-medium">${emp.name}</td>
-        <td class="text-xs">${PERIOD.label(period.start,period.end)}</td>
-        <td class="text-xs mono">${dayLabel(d)}</td>
+        ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${emp.name}</td>`:''}
+        ${!hasPeriodFilter?`<td class="text-xs">${PERIOD.label(period.start,period.end)}</td>`:''}
+        <td class="text-xs mono whitespace-nowrap">${dayLabel(d)}</td>
         <td class="mono text-xs">${row.start||'—'}</td>
         <td class="mono text-xs">${row.lunch||'—'}</td>
         <td class="mono text-xs">${row.end||'—'}</td>
@@ -1854,9 +1858,9 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
       const lOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.lunch||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
       const pOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.pause||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
       tr.innerHTML=`
-        <td class="text-left pl-3 text-xs font-medium">${emp.name}</td>
-        <td class="text-xs">${PERIOD.label(period.start,period.end)}</td>
-        <td class="text-xs mono">${dayLabel(d)}</td>
+        ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${emp.name}</td>`:''}
+        ${!hasPeriodFilter?`<td class="text-xs">${PERIOD.label(period.start,period.end)}</td>`:''}
+        <td class="text-xs mono whitespace-nowrap">${dayLabel(d)}</td>
         <td><input type="text" class="time-input" value="${row.start||''}" placeholder="—"
           oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','start',this.value)"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','start',this.value)"/></td>
@@ -1868,7 +1872,7 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
         <td><select class="time-input" style="width:68px"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td style="min-width:160px"><input type="text" class="time-input" style="width:100%;min-width:140px" value="${(row.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…"
+        <td style="min-width:140px"><input type="text" class="time-input" style="width:100%;min-width:120px" value="${(row.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…"
           oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/></td>
         <td><button onclick="approveArchiveEmployee('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button></td>`;
