@@ -432,7 +432,8 @@ let state = {
   conflictResolutions:{}, bulkOverwrite:false,
   loginPendingEmpId:null,
   empTab:'current',        // 'current' | 'history'
-  empHistoryPeriod:null,   // period key selected in history
+  empHistoryPeriod:null, // period key selected in history
+  showArchivedInFilter: false,
 };
 const _archiveLoadedPeriods = new Set();
 
@@ -1725,17 +1726,23 @@ function archiveStatusCell(emp, period, sheet){
 function renderArchives(){
   const frag=document.createDocumentFragment();
   const periods=PERIOD.list(24);
-  const allEmps=DB.employees.slice().sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
+  const allEmps=DB.employees
+  .filter(e => state.showArchivedInFilter || !e.archived)
+  .sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
+const archivedCount=DB.employees.filter(e=>e.archived).length;
 
   // ── Filtres
   const filters=el('div','card p-4 mb-4 flex flex-wrap gap-3 items-end');
   const loadLbl=state.archivesLoading?'⏳ Chargement…':'🔄 Charger depuis Airtable';
   filters.innerHTML=`
     <div><label class="field-label block mb-1">Employé</label>
-      <select onchange="state.archiveFilter.name=this.value;render()">
-        <option value="">Tous</option>
-        ${allEmps.map(e=>`<option value="${e.id}" ${state.archiveFilter.name===e.id?'selected':''}>${e.name}${e.archived?' (archivé)':''}</option>`).join('')}
-      </select></div>
+  <div class="flex items-center gap-2">
+    <select onchange="state.archiveFilter.name=this.value;render()">
+      <option value="">Tous</option>
+      ${allEmps.map(e=>`<option value="${e.id}" ${state.archiveFilter.name===e.id?'selected':''}>${e.name}${e.archived?' (archivé)':''}</option>`).join('')}
+    </select>
+    ${archivedCount>0?`<button onclick="state.showArchivedInFilter=!state.showArchivedInFilter;render()" class="btn text-xs ${state.showArchivedInFilter?'btn-orange':'btn-light'}">📦 ${state.showArchivedInFilter?'Masquer':'Archivés ('+archivedCount+')'}</button>`:''}
+  </div></div>
     <div><label class="field-label block mb-1">Période</label>
       <select onchange="state.archiveFilter.period=this.value;if(this.value)loadArchivePeriod(this.value);else render()">
         <option value="">Toutes</option>
@@ -1841,7 +1848,7 @@ function renderArchives(){
         <td class="mono text-xs">${row.end||'—'}</td>
         <td class="mono text-xs">${row.pause||'—'}</td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td class="text-xs">${hl(row.notes)}</td>
+        <td class="text-xs" style="max-width:260px;word-break:break-word;white-space:normal">${hl(row.notes)}</td>
         <td><span class="badge-approved">✓ Approuvé</span></td>`;
     } else {
       const lOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.lunch||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
@@ -1861,7 +1868,7 @@ function renderArchives(){
         <td><select class="time-input" style="width:68px"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td><input type="text" class="time-input" style="width:100px" value="${(row.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…"
+        <td style="min-width:160px"><input type="text" class="time-input" style="width:100%;min-width:140px" value="${(row.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…"
           oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/></td>
         <td><button onclick="approveArchiveEmployee('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button></td>`;
@@ -2464,7 +2471,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   const periodLabel = PERIOD.airtableLabel(periodStart, periodEnd);
 
   // On n'envoie que les lignes qui ont au moins une heure saisie
-  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes);
+  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.airtableRecordId);
   const filteredPromises = rowsWithData.map(row => {
     const data = {
       empId:         emp.airtableId,
