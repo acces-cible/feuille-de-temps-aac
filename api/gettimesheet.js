@@ -7,7 +7,6 @@ module.exports = async function handler(req, res) {
   }
 
   const { empId, periodStart, periodEnd } = req.query;
-
   console.log('=== getTimesheet ===', { empId, periodStart, periodEnd });
 
   if (!empId || !periodStart || !periodEnd) {
@@ -19,9 +18,10 @@ module.exports = async function handler(req, res) {
   const headers = { Authorization: `Bearer ${AIRTABLE_TOKEN}` };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
-  // Filtre directement dans l'API Airtable — beaucoup plus rapide que tout télécharger
+  // Filtrer par date côté Airtable (rapide : ~84 records max par période)
+  // Filtrer par employé côté client (r.fields['Employé'] retourne un tableau d'IDs record)
   const formula = encodeURIComponent(
-    `AND(FIND('${empId}', ARRAYJOIN({Employé}, ',')), {Date}>='${periodStart}', {Date}<='${periodEnd}')`
+    `AND({Date}>='${periodStart}', {Date}<='${periodEnd}')`
   );
 
   try {
@@ -34,11 +34,19 @@ module.exports = async function handler(req, res) {
       offset = response.data.offset || null;
     } while (offset);
 
-    console.log(`Lignes pour ${empId} (${periodStart}→${periodEnd}): ${allRecords.length}`);
+    console.log(`Total lignes pour la période: ${allRecords.length}`);
+
+    // Filtrer par employé côté client (fields['Employé'] = tableau de record IDs)
+    const empRecords = allRecords.filter(r => {
+      const linked = r.fields['Employé'] || [];
+      return linked.includes(empId);
+    });
+
+    console.log(`Lignes pour ${empId}: ${empRecords.length}`);
 
     // Dédupliquer par date: garder l'enregistrement avec le plus de données
     const byDate = {};
-    allRecords.forEach(r => {
+    empRecords.forEach(r => {
       const date = r.fields['Date'] || '';
       if (!byDate[date]) {
         byDate[date] = r;
