@@ -49,11 +49,14 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const filter = encodeURIComponent(
-      `AND({Date}='${date}', FIND('${empId}', ARRAYJOIN({Employé}, ',')))`
-    );
-    const searchRes = await axios.get(`${baseUrl}?filterByFormula=${filter}`, { headers });
-    const empRecords = searchRes.data.records;
+    // Filtre par date seulement (Airtable retourne des noms dans les formulas, pas des IDs)
+    // On filtre par employé côté JS comme dans gettimesheet.js
+    const filter = encodeURIComponent(`{Date}='${date}'`);
+    const searchRes = await axios.get(`${baseUrl}?filterByFormula=${filter}&pageSize=100`, { headers });
+    const empRecords = searchRes.data.records.filter(r => {
+      const linked = r.fields['Employé'] || [];
+      return linked.includes(empId);
+    });
 
     console.log(`Trouvé ${empRecords.length} record(s) pour ${empId} / ${date}`);
 
