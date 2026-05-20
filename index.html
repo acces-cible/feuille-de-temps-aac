@@ -629,6 +629,7 @@ function renderEmployee(){
     </div>
     <div class="flex items-center gap-2">
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
+      <button id="btn-refresh-sheet" onclick="refreshSheetFromAirtable(this)" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Rafraîchir depuis Airtable">🔄</button>
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
@@ -2200,6 +2201,33 @@ async function loadSheetFromAirtable(emp, periodOverride){
   }catch(e){ console.warn('loadSheetFromAirtable erreur:', e.message); }
 }
 
+async function refreshSheetFromAirtable(btn) {
+  const emp = currentEmp();
+  if (!emp) return;
+
+  // Feedback visuel immédiat
+  const orig = btn.textContent;
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  // Déterminer la période affichée (courante ou archive)
+  let period;
+  if (state.empTab === 'history' && state.empHistoryPeriod) {
+    period = PERIOD.list(24).find(p => p.key === state.empHistoryPeriod) || PERIOD.current();
+  } else {
+    period = PERIOD.current();
+  }
+
+  try {
+    await loadSheetFromAirtable(emp, period);
+    btn.textContent = '✅';
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+  } catch(e) {
+    btn.textContent = '❌';
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
+  }
+}
+  
 async function loadArchivePeriod(periodKey){
   const period = PERIOD.list(24).find(p => p.key === periodKey);
   if(!period) return;
