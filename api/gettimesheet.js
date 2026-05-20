@@ -19,30 +19,26 @@ module.exports = async function handler(req, res) {
   const headers = { Authorization: `Bearer ${AIRTABLE_TOKEN}` };
   const baseUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${TABLE_NAME}`;
 
+  // Filtre directement dans l'API Airtable — beaucoup plus rapide que tout télécharger
+  const formula = encodeURIComponent(
+    `AND(FIND('${empId}', ARRAYJOIN({Employé}, ',')), {Date}>='${periodStart}', {Date}<='${periodEnd}')`
+  );
+
   try {
-    // Pagination complète
     let allRecords = [];
     let offset = null;
     do {
-      const url = offset ? `${baseUrl}?pageSize=100&offset=${offset}` : `${baseUrl}?pageSize=100`;
+      const url = `${baseUrl}?pageSize=100&filterByFormula=${formula}${offset ? `&offset=${offset}` : ''}`;
       const response = await axios.get(url, { headers });
       allRecords = allRecords.concat(response.data.records);
       offset = response.data.offset || null;
     } while (offset);
 
-    console.log(`Total lignes: ${allRecords.length}`);
-
-    const empRecords = allRecords.filter(r => {
-      const linked = r.fields['Employé'] || [];
-      const date   = r.fields['Date']    || '';
-      return linked.includes(empId) && date >= periodStart && date <= periodEnd;
-    });
-
-    console.log(`Lignes pour ${empId}: ${empRecords.length}`);
+    console.log(`Lignes pour ${empId} (${periodStart}→${periodEnd}): ${allRecords.length}`);
 
     // Dédupliquer par date: garder l'enregistrement avec le plus de données
     const byDate = {};
-    empRecords.forEach(r => {
+    allRecords.forEach(r => {
       const date = r.fields['Date'] || '';
       if (!byDate[date]) {
         byDate[date] = r;
@@ -60,6 +56,7 @@ module.exports = async function handler(req, res) {
       start:     r.fields['Début']      || '',
       end:       r.fields['Fin']        || '',
       lunch:     r.fields['Dîner']      || '',
+      pause:     r.fields['Pause']      || '',
       notes:     r.fields['Notes']      || '',
       adminNote: r.fields['Note Admin'] || '',
       approved:  r.fields['Approuvé']   || false,
