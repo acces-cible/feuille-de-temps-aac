@@ -71,7 +71,8 @@ module.exports = async function handler(req, res) {
       approved:  r.fields['Approuvé']   || false,
     }));
 
-    return res.status(200).json({ rows });
+    res.setHeader('Cache-Control', 'no-store');
+return res.status(200).json({ rows });
 
   } catch (error) {
     const detail = error.response ? JSON.stringify(error.response.data) : error.message;
