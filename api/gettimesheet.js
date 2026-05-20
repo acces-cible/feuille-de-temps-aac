@@ -58,6 +58,7 @@ module.exports = async function handler(req, res) {
       }
     });
 
+    if (empRecords[0]) console.log('CHAMPS DISPO:', Object.keys(empRecords[0].fields));
     const rows = Object.values(byDate).map(r => ({
       airtableRecordId: r.id,
       date:      r.fields['Date']       || '',
