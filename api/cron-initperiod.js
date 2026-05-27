@@ -14,8 +14,9 @@ module.exports = async function handler(req, res) {
   const baseUrl     = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}`;
 
   try {
-    // 1. Récupérer tous les employés actifs
-    const empRes = await axios.get(`${baseUrl}/${EMP_TABLE}`, { headers });
+    // 1. Récupérer seulement les employés actifs (non archivés)
+    const empFilter = encodeURIComponent(`NOT({Archivé})`);
+    const empRes = await axios.get(`${baseUrl}/${EMP_TABLE}?filterByFormula=${empFilter}`, { headers });
     const employees = empRes.data.records.map(r => ({ id: r.id, name: r.fields['Nom AI'] || '' }));
 
     // 2. Calculer les 14 dates de la période courante
@@ -42,10 +43,13 @@ module.exports = async function handler(req, res) {
     for (const emp of employees) {
       for (const date of dates) {
         try {
-          const filter = encodeURIComponent(`AND({Date}='${date}',FIND('${emp.id}',ARRAYJOIN({Employé},',')))`);
-          const check  = await axios.get(`${baseUrl}/${TIME_TABLE}?filterByFormula=${filter}`, { headers });
+        // Filtre par date seulement (ARRAYJOIN ne fonctionne pas avec des IDs)
+        // Filtrer par employé côté JS comme dans gettimesheet.js
+        const checkFilter = encodeURIComponent(`AND({Date}>='${date}',{Date}<='${date}')`);
+        const check = await axios.get(`${baseUrl}/${TIME_TABLE}?filterByFormula=${checkFilter}&pageSize=100`, { headers });
+        const exists = check.data.records.some(r => (r.fields['Employé'] || []).includes(emp.id));
 
-          if (check.data.records.length > 0) { skipped++; continue; }
+          if (exists) { skipped++; continue; }
 
           await axios.post(`${baseUrl}/${TIME_TABLE}`, {
             fields: { "Employé": [emp.id], "Date": date }
