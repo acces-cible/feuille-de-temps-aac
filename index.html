@@ -308,7 +308,8 @@ function toTimeVal(str){
 //  LIVE CALC — updates row total + period total without re-render
 // ================================================================
 const _syncTimers = {}; // debounce timers: key = "eid-idx"
-const _syncLocks  = new Set(); // évite les exécutions parallèles de syncFullSheet
+const _syncLocks   = new Set(); // évite les exécutions parallèles de syncFullSheet
+const _pendingSync = new Set(); // sync demandé pendant qu'un autre est en cours
 const _fieldOriginals = {}; // capture valeur originale au focus pour le log
 
 function captureOriginal(eid,pk,idx,field,val){
@@ -629,7 +630,6 @@ function renderEmployee(){
     </div>
     <div class="flex items-center gap-2">
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
-      <button id="btn-refresh-sheet" onclick="refreshSheetFromAirtable(this)" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Rafraîchir depuis Airtable">🔄</button>
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
@@ -2192,6 +2192,7 @@ async function loadSheetFromAirtable(emp, periodOverride){
       if(at.start     && at.start!==lr.start)    {lr.start=at.start;changed=true;}
       if(at.end       && at.end!==lr.end)        {lr.end=at.end;changed=true;}
       if(at.lunch     && at.lunch!==lr.lunch)    {lr.lunch=at.lunch;changed=true;}
+      if(at.pause     && at.pause!==lr.pause)    {lr.pause=at.pause;changed=true;}
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
     });
@@ -2201,33 +2202,6 @@ async function loadSheetFromAirtable(emp, periodOverride){
   }catch(e){ console.warn('loadSheetFromAirtable erreur:', e.message); }
 }
 
-async function refreshSheetFromAirtable(btn) {
-  const emp = currentEmp();
-  if (!emp) return;
-
-  // Feedback visuel immédiat
-  const orig = btn.textContent;
-  btn.textContent = '⏳';
-  btn.disabled = true;
-
-  // Déterminer la période affichée (courante ou archive)
-  let period;
-  if (state.empTab === 'history' && state.empHistoryPeriod) {
-    period = PERIOD.list(24).find(p => p.key === state.empHistoryPeriod) || PERIOD.current();
-  } else {
-    period = PERIOD.current();
-  }
-
-  try {
-    await loadSheetFromAirtable(emp, period);
-    btn.textContent = '✅';
-    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
-  } catch(e) {
-    btn.textContent = '❌';
-    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
-  }
-}
-  
 async function loadArchivePeriod(periodKey){
   const period = PERIOD.list(24).find(p => p.key === periodKey);
   if(!period) return;
@@ -2262,7 +2236,11 @@ async function syncFullSheetToAirtable(eid, pk){
   const emp = DB.employees.find(e => e.id === eid) || currentEmp();
   if(!emp || !emp.airtableId){ console.log('syncFullSheet: pas airtableId pour', eid); return; }
   const sheetKey = pk ? `${eid}_${pk}` : `${emp.id}_${PERIOD.current().key}`;
-  if(_syncLocks.has(sheetKey)){ console.log('syncFullSheet: déjà en cours, skip', sheetKey); return; }
+  if(_syncLocks.has(sheetKey)){
+    _pendingSync.add(sheetKey);
+    console.log('syncFullSheet: en cours, mise en attente', sheetKey);
+    return;
+  }
   _syncLocks.add(sheetKey);
   const sheet = DB.timesheets[sheetKey];
   if(!sheet){ _syncLocks.delete(sheetKey); return; }
@@ -2274,7 +2252,7 @@ async function syncFullSheetToAirtable(eid, pk){
 
   // Envoyer chaque ligne qui a des données — une requête par ligne
 const rowsWithData = sheet.rows.filter(r => 
-  r.start || r.end || r.notes || r.adminNote
+  r.start || r.end || r.lunch || r.pause || r.notes || r.adminNote
 );
   dbg(`Sync: ${emp.name} — ${rowsWithData.length} ligne(s)`);
   dbg(`airtableId: ${emp.airtableId||'VIDE'}`);
@@ -2317,7 +2295,11 @@ const rowsWithData = sheet.rows.filter(r =>
     if(idsCached) save();
   } finally {
     _syncLocks.delete(sheetKey);
-  syncEnd();
+    syncEnd();
+    if(_pendingSync.has(sheetKey)){
+      _pendingSync.delete(sheetKey);
+      setTimeout(() => syncFullSheetToAirtable(eid, pk), 200);
+    }
   }
 }
 
@@ -2437,6 +2419,7 @@ async function resyncAllToAirtable(periodKey){
 
   // Libérer tous les verrous bloqués
   _syncLocks.clear();
+  _pendingSync.clear();
 
   // ÉTAPE 1 : Tirer depuis Airtable vers le local (merge bidirectionnel)
   // Règle : si Airtable a des données et le local est vide, le local est mis à jour.
@@ -2473,7 +2456,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   const periodLabel = PERIOD.airtableLabel(periodStart, periodEnd);
 
   // On n'envoie que les lignes qui ont au moins une heure saisie
-  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
+  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.lunch || r.pause || r.notes || r.adminNote);
   const filteredPromises = rowsWithData.map(row => {
     const data = {
       empId:         emp.airtableId,
