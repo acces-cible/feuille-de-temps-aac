@@ -129,7 +129,7 @@
 </div>
 <div id="sync-indicator" style="display:none"><div class="sync-spinner"></div><span>Sync…</span></div>
 <script>
-const APP_VERSION = 'v1.4'; // rowsWithData+pause+pendingSync+resync-fix
+const APP_VERSION = 'v1.5'; // +historique auto-load depuis Airtable
 
 // ================================================================
 //  TOAST & SPINNER
@@ -642,7 +642,15 @@ function renderEmployee(){
   [['current','📋 Période courante'],['history','🕐 Historique']].forEach(([key,label])=>{
     const btn=el('button',`px-4 py-3 text-sm whitespace-nowrap ${state.empTab===key?'tab-active':'text-slate-500 hover:text-slate-700'}`);
     btn.textContent=label;
-    btn.onclick=()=>{state.empTab=key;render();};
+    btn.onclick=()=>{
+      state.empTab=key;
+      // Quand on ouvre l'historique, charger les 3 dernières périodes depuis Airtable
+      if(key==='history' && emp.airtableId){
+        const pastPeriods=PERIOD.list(24).slice(1,4);
+        Promise.allSettled(pastPeriods.map(p=>loadSheetFromAirtable(emp,p)));
+      }
+      render();
+    };
     tabs.appendChild(btn);
   });
 
@@ -718,9 +726,9 @@ function renderEmpHistory(emp){
 
   if(periodsWithData.length===0){
     content.innerHTML=`<div class="card p-8 text-center text-slate-400">
-      <div class="text-4xl mb-3">📭</div>
-      <div class="font-medium">Aucun historique disponible</div>
-      <div class="text-sm mt-1">Les périodes complétées apparaîtront ici.</div>
+      <div class="text-4xl mb-3">⏳</div>
+      <div class="font-medium">Chargement de l'historique…</div>
+      <div class="text-sm mt-1 mt-2">Si rien n'apparaît, appuyez sur 🔄</div>
     </div>`;
     return content;
   }
