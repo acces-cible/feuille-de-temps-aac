@@ -45,18 +45,33 @@ module.exports = async function handler(req, res) {
     console.log(`Lignes pour ${empId}: ${empRecords.length}`);
 
     // Dédupliquer par date: garder l'enregistrement avec le plus de données
+    // et supprimer les doublons directement dans Airtable
     const byDate = {};
+    const toDelete = [];
     empRecords.forEach(r => {
       const date = r.fields['Date'] || '';
       if (!byDate[date]) {
         byDate[date] = r;
       } else {
         const prev = byDate[date];
-        const prevScore = ['Début','Fin','Dîner','Notes'].filter(k => prev.fields[k]).length;
-        const curScore  = ['Début','Fin','Dîner','Notes'].filter(k => r.fields[k]).length;
-        if (curScore > prevScore) byDate[date] = r;
+        const prevScore = ['Début','Fin','Dîner','Pause','Notes'].filter(k => prev.fields[k]).length;
+        const curScore  = ['Début','Fin','Dîner','Pause','Notes'].filter(k => r.fields[k]).length;
+        if (curScore > prevScore) {
+          toDelete.push(byDate[date].id); // l'ancien perd
+          byDate[date] = r;
+        } else {
+          toDelete.push(r.id); // le nouveau perd
+        }
       }
     });
+
+    // Supprimer les doublons en parallèle (nettoyage Airtable automatique)
+    if (toDelete.length > 0) {
+      console.log(`Suppression de ${toDelete.length} doublon(s) pour ${empId}...`);
+      await Promise.allSettled(toDelete.map(id =>
+        axios.delete(`${baseUrl}/${id}`, { headers })
+      ));
+    }
 
     if (empRecords[0]) console.log('CHAMPS DISPO:', Object.keys(empRecords[0].fields));
     const rows = Object.values(byDate).map(r => ({
