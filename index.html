@@ -189,7 +189,9 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  DATA SERVICE — localStorage now, swap .load()/.save() for Airtable later
 // ================================================================
-const DataService = {
+const APP_VERSION = 'v1.4'; // rowsWithData+pause+pendingSync+resync-fix
+
+
   KEY: 'fdt_db_v6',
   load(){ try{return JSON.parse(localStorage.getItem(this.KEY))||null;}catch(e){return null;} },
   save(db){ localStorage.setItem(this.KEY,JSON.stringify(db)); },
@@ -502,6 +504,7 @@ function renderLogin(){
     </div>
     <div class="mt-6 border-t pt-4 text-center">
       <button onclick="toggleAdminArea()" class="text-sm text-slate-400 hover:text-slate-600 underline">Accès administrateur</button>
+      <div class="text-xs text-slate-300 mt-2">${APP_VERSION}</div>
     </div>
     <div id="admin-login-area" class="hidden mt-3 space-y-2">
       <input type="password" id="admin-pw" placeholder="Mot de passe admin" class="w-full"
@@ -1331,7 +1334,7 @@ function renderAdmin(){
       <div class="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">A</div>
       <div>
         <div class="font-semibold">Administrateur</div>
-        <div class="text-xs text-blue-200">${PERIOD.label(period.start,period.end)}</div>
+        <div class="text-xs text-blue-200">${PERIOD.label(period.start,period.end)} · <span class="opacity-60">${APP_VERSION}</span></div>
       </div>
     </div>
     <div class="flex items-center gap-2 flex-wrap justify-end">
@@ -2430,16 +2433,10 @@ async function resyncAllToAirtable(periodKey){
     await loadSheetFromAirtable(emp, period);
   }
 
-  // ÉTAPE 2 : Effacer les recordIds locaux pour forcer le chemin fallback
-  // → syncairtable.js cherchera par date, supprimera les doublons, puis patchera le bon record
-  for(const emp of emps){
-    const sheetKey = `${emp.id}_${periodKey}`;
-    const sheet = DB.timesheets[sheetKey];
-    if(sheet) sheet.rows.forEach(r => { delete r.airtableRecordId; });
-  }
-
-  // ÉTAPE 3 : Pousser avec déduplication automatique
-  toast(`⬆️ Envoi + déduplication Airtable (${emps.length} employé(s))…`, 'info', 15000);
+  // ÉTAPE 2 : Pousser le résultat fusionné vers Airtable
+  // Les recordIds locaux sont conservés (mis à jour par loadSheetFromAirtable)
+  // → PATCH direct sur le bon record, pas de création de doublons
+  toast(`⬆️ Envoi vers Airtable (${emps.length} employé(s))…`, 'info', 15000);
   let done = 0;
   for(const emp of emps){
     await syncFullSheetToAirtable(emp.id, periodKey);
