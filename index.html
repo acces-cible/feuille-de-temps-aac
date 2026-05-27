@@ -2430,8 +2430,16 @@ async function resyncAllToAirtable(periodKey){
     await loadSheetFromAirtable(emp, period);
   }
 
-  // ÉTAPE 2 : Pousser le résultat fusionné vers Airtable
-  toast(`⬆️ Envoi vers Airtable (${emps.length} employé(s))…`, 'info', 15000);
+  // ÉTAPE 2 : Effacer les recordIds locaux pour forcer le chemin fallback
+  // → syncairtable.js cherchera par date, supprimera les doublons, puis patchera le bon record
+  for(const emp of emps){
+    const sheetKey = `${emp.id}_${periodKey}`;
+    const sheet = DB.timesheets[sheetKey];
+    if(sheet) sheet.rows.forEach(r => { delete r.airtableRecordId; });
+  }
+
+  // ÉTAPE 3 : Pousser avec déduplication automatique
+  toast(`⬆️ Envoi + déduplication Airtable (${emps.length} employé(s))…`, 'info', 15000);
   let done = 0;
   for(const emp of emps){
     await syncFullSheetToAirtable(emp.id, periodKey);
