@@ -129,8 +129,6 @@
 </div>
 <div id="sync-indicator" style="display:none"><div class="sync-spinner"></div><span>Sync…</span></div>
 <script>
-const APP_VERSION = 'v1.5'; // +historique auto-load depuis Airtable
-
 // ================================================================
 //  TOAST & SPINNER
 // ================================================================
@@ -211,7 +209,8 @@ const DataService = {
       ],
       timesheets:{},
       periodReminderResets:{},
-      changeLog:[]
+      changeLog:[],
+      holidayPay:{}  // { empId: { periodKey: overrideMinutes } }
     };
   }
 };
@@ -299,6 +298,60 @@ function fmtMins(mins){
 }
 function calcWorked(s,e,l,p){ if(s===null||e===null)return null; const w=e-s-(l||0)-(p||0); return w<0?0:w; }
 
+// ================================================================
+//  HOLIDAY PAY HELPERS
+// ================================================================
+// Arrondir au 15 minutes supérieur (ceiling)
+function ceilTo15(mins){
+  if(!mins || mins <= 0) return 0;
+  return Math.ceil(mins / 15) * 15;
+}
+
+// Calculer les heures de congé férié pour un employé et une période
+// = (totalMinutes des 2 périodes précédentes) * 0.05, arrondi au 15min supérieur
+function calcHolidayPay(empId, periodKey){
+  const allPeriods = PERIOD.list(24);
+  const curIdx = allPeriods.findIndex(p => p.key === periodKey);
+  if(curIdx < 0) return 0;
+  // 2 périodes précédentes (indices curIdx+1 et curIdx+2 dans la liste)
+  const prev1 = allPeriods[curIdx + 1];
+  const prev2 = allPeriods[curIdx + 2];
+  let total = 0;
+  [prev1, prev2].forEach(p => {
+    if(!p) return;
+    const sheet = DB.timesheets[`${empId}_${p.key}`];
+    if(sheet) total += (sheet.totalMinutes || calcSheetTotal(sheet));
+  });
+  return ceilTo15(Math.round(total * 0.05));
+}
+
+// Obtenir la valeur effective (override ou calculée)
+function getHolidayPay(empId, periodKey){
+  if(DB.holidayPay[empId] && DB.holidayPay[empId][periodKey] !== undefined){
+    return DB.holidayPay[empId][periodKey];
+  }
+  return calcHolidayPay(empId, periodKey);
+}
+
+// Sauvegarder un override
+function setHolidayPay(empId, periodKey, rawVal){
+  const parsed = parseTime(rawVal);
+  if(!DB.holidayPay[empId]) DB.holidayPay[empId] = {};
+  if(parsed === null){
+    // Champ vide → supprimer l'override (retour au calcul auto)
+    delete DB.holidayPay[empId][periodKey];
+  } else {
+    DB.holidayPay[empId][periodKey] = ceilTo15(parsed);
+  }
+  save();
+  // Mettre à jour l'affichage du champ avec la valeur arrondie
+  const el2 = document.getElementById(`hp-${empId}-${periodKey}`);
+  if(el2) el2.textContent = fmtMins(getHolidayPay(empId, periodKey));
+  // Aussi mettre à jour le champ de saisie s'il existe
+  const inp = document.getElementById(`hp-inp-${empId}-${periodKey}`);
+  if(inp) inp.value = fmtMins(getHolidayPay(empId, periodKey));
+}
+
 // Convert stored value → HH:MM for <input type="time">
 function toTimeVal(str){
   const m=parseTime(str);
@@ -310,8 +363,7 @@ function toTimeVal(str){
 //  LIVE CALC — updates row total + period total without re-render
 // ================================================================
 const _syncTimers = {}; // debounce timers: key = "eid-idx"
-const _syncLocks   = new Set(); // évite les exécutions parallèles de syncFullSheet
-const _pendingSync = new Set(); // sync demandé pendant qu'un autre est en cours
+const _syncLocks  = new Set(); // évite les exécutions parallèles de syncFullSheet
 const _fieldOriginals = {}; // capture valeur originale au focus pour le log
 
 function captureOriginal(eid,pk,idx,field,val){
@@ -415,6 +467,8 @@ DB.employees.forEach(emp=>{
 Object.values(DB.timesheets||{}).forEach(sheet=>{
   (sheet.rows||[]).forEach(row=>{ if(row.adminNote===undefined) row.adminNote=''; });
 });
+// Migrate holidayPay store
+if(!DB.holidayPay) DB.holidayPay = {};
 
 // Les employés viennent de Airtable via getEmployees au démarrage.
 // On s'assure juste que le schéma local est à jour.
@@ -504,7 +558,6 @@ function renderLogin(){
     </div>
     <div class="mt-6 border-t pt-4 text-center">
       <button onclick="toggleAdminArea()" class="text-sm text-slate-400 hover:text-slate-600 underline">Accès administrateur</button>
-      <div class="text-xs text-slate-300 mt-2">${APP_VERSION}</div>
     </div>
     <div id="admin-login-area" class="hidden mt-3 space-y-2">
       <input type="password" id="admin-pw" placeholder="Mot de passe admin" class="w-full"
@@ -642,15 +695,7 @@ function renderEmployee(){
   [['current','📋 Période courante'],['history','🕐 Historique']].forEach(([key,label])=>{
     const btn=el('button',`px-4 py-3 text-sm whitespace-nowrap ${state.empTab===key?'tab-active':'text-slate-500 hover:text-slate-700'}`);
     btn.textContent=label;
-    btn.onclick=()=>{
-      state.empTab=key;
-      // Quand on ouvre l'historique, charger les 3 dernières périodes depuis Airtable
-      if(key==='history' && emp.airtableId){
-        const pastPeriods=PERIOD.list(24).slice(1,4);
-        Promise.allSettled(pastPeriods.map(p=>loadSheetFromAirtable(emp,p)));
-      }
-      render();
-    };
+    btn.onclick=()=>{state.empTab=key;render();};
     tabs.appendChild(btn);
   });
 
@@ -726,9 +771,9 @@ function renderEmpHistory(emp){
 
   if(periodsWithData.length===0){
     content.innerHTML=`<div class="card p-8 text-center text-slate-400">
-      <div class="text-4xl mb-3">⏳</div>
-      <div class="font-medium">Chargement de l'historique…</div>
-      <div class="text-sm mt-1 mt-2">Si rien n'apparaît, appuyez sur 🔄</div>
+      <div class="text-4xl mb-3">📭</div>
+      <div class="font-medium">Aucun historique disponible</div>
+      <div class="text-sm mt-1">Les périodes complétées apparaîtront ici.</div>
     </div>`;
     return content;
   }
@@ -1046,9 +1091,19 @@ const recordId = row.airtableRecordId;
 function quickFill(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
-  DB.timesheets[key].rows[rowIdx].notes=value;
+  const row = DB.timesheets[key].rows[rowIdx];
+  row.notes = value;
+  // Auto-fill 7h30 (09:00 → 16:30, sans dîner) pour Congé et Maladie
+  if(value === 'Congé' || value === 'Maladie'){
+    if(!row.start) row.start = '09:00';
+    if(!row.end)   row.end   = '16:30';
+    if(!row.lunch) row.lunch = '';
+  }
+  // Recalculer le total de la feuille
+  const sheet = DB.timesheets[key];
+  sheet.totalMinutes = calcSheetTotal(sheet);
   save();
-  syncFullSheetToAirtable(empId, periodKey); // sync feuille complete vers Airtable
+  syncFullSheetToAirtable(empId, periodKey);
   render();
 }
 
@@ -1342,7 +1397,7 @@ function renderAdmin(){
       <div class="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">A</div>
       <div>
         <div class="font-semibold">Administrateur</div>
-        <div class="text-xs text-blue-200">${PERIOD.label(period.start,period.end)} · <span class="opacity-60">${APP_VERSION}</span></div>
+        <div class="text-xs text-blue-200">${PERIOD.label(period.start,period.end)}</div>
       </div>
     </div>
     <div class="flex items-center gap-2 flex-wrap justify-end">
@@ -1455,6 +1510,9 @@ function renderOverview(period){
     const isZero=tot===0;
     const bc=isZero?(emp.partTime?'border-l-4 border-purple-400':'border-l-4 border-red-400'):'border-l-4 border-transparent';
     const card=el('div',`card mb-3 overflow-hidden ${bc}`);
+    const hpCalc = calcHolidayPay(emp.id, period.key);
+    const hpEff  = getHolidayPay(emp.id, period.key);
+    const hpIsOverride = DB.holidayPay[emp.id]?.[period.key] !== undefined;
     const ch=el('div','px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-slate-50 border-b');
     ch.innerHTML=`
       <div class="flex items-center gap-3">
@@ -1468,6 +1526,18 @@ function renderOverview(period){
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <span class="mono text-sm font-semibold ${isZero?(emp.partTime?'text-purple-600':'text-red-600'):'text-slate-700'}" id="gt-${emp.id}">${fmtMins(tot)}</span>
+        <!-- Congé férié -->
+        <div class="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1" title="Indemnité de congé férié = (2 périodes précédentes × 5%), arrondi au 15min supérieur">
+          <span class="text-xs text-amber-700 font-semibold">🎉 Férié</span>
+          <input type="text" id="hp-inp-${emp.id}-${period.key}"
+            class="mono text-xs font-bold text-amber-800 bg-transparent border-none outline-none w-14 text-center"
+            style="border-bottom:1px dashed #d97706;cursor:text"
+            value="${fmtMins(hpEff)}"
+            title="Modifier l'indemnité (calcul auto: ${fmtMins(hpCalc)})"
+            onchange="setHolidayPay('${emp.id}','${period.key}',this.value)"
+            onblur="setHolidayPay('${emp.id}','${period.key}',this.value)"/>
+          ${hpIsOverride?`<button onclick="DB.holidayPay['${emp.id}']['${period.key}']=undefined;delete DB.holidayPay['${emp.id}']['${period.key}'];save();render()" class="text-amber-400 hover:text-amber-600 text-xs leading-none" title="Réinitialiser au calcul auto (${fmtMins(hpCalc)})">↺</button>`:''}
+        </div>
         ${sheet?.approved
           ?`<span class="badge-approved">✓ Approuvé</span><button onclick="unlockSheet('${emp.id}','${period.key}')" class="btn btn-gray text-xs">🔓 Déverrouiller</button>`
           :`<span class="badge-pending">En attente</span><button onclick="approveSheet('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button>`}
@@ -1744,7 +1814,7 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
     <table><thead><tr class="nav-navy">
       <th class="text-left pl-3">Employé</th>
       <th>Total heures</th>
-      ${hasPeriodFilter?'<th>Statut</th><th></th>':''}
+      ${hasPeriodFilter?'<th title="Indemnité de congé férié = (2 périodes précédentes × 5%), arrondi au 15min supérieur">🎉 Congé férié</th><th>Statut</th><th></th>':''}
     </tr></thead>
     <tbody>${(summaryEmp||[]).filter(Boolean).map(emp=>{
       const tot=(summaryPeriods||[]).filter(Boolean).reduce((s,p)=>{
@@ -1752,10 +1822,26 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
       },0);
       const sheet=hasPeriodFilter?DB.timesheets[`${emp.id}_${state.archiveFilter.period}`]:null;
       const approved=sheet?.approved;
+      const hpKey = state.archiveFilter.period;
+      const hpCalc = hasPeriodFilter ? calcHolidayPay(emp.id, hpKey) : 0;
+      const hpEff  = hasPeriodFilter ? getHolidayPay(emp.id, hpKey) : 0;
+      const hpIsOverride = hasPeriodFilter && DB.holidayPay[emp.id]?.[hpKey] !== undefined;
       return `<tr>
         <td class="text-left pl-3">${emp.name}</td>
         <td class="total-cell">${fmtMins(tot)}</td>
         ${hasPeriodFilter?`
+          <td>
+            <div class="flex items-center justify-center gap-1">
+              <input type="text" id="hp-arch-inp-${emp.id}"
+                class="mono text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center"
+                style="width:72px;cursor:text"
+                value="${fmtMins(hpEff)}"
+                title="Modifier (calcul auto: ${fmtMins(hpCalc)})"
+                onchange="setHolidayPay('${emp.id}','${hpKey}',this.value)"
+                onblur="setHolidayPay('${emp.id}','${hpKey}',this.value)"/>
+              ${hpIsOverride?`<button onclick="DB.holidayPay['${emp.id}']['${hpKey}']=undefined;delete DB.holidayPay['${emp.id}']['${hpKey}'];save();render()" class="text-amber-500 hover:text-amber-700 text-xs" title="Réinitialiser (auto: ${fmtMins(hpCalc)})">↺</button>`:'<span class="text-xs text-slate-300 ml-1" title="Valeur calculée automatiquement">auto</span>'}
+            </div>
+          </td>
           <td>${approved
             ?'<span class="badge-approved">✓ Approuvé</span>'
             :'<span class="badge-pending">En attente</span>'}
@@ -2203,7 +2289,6 @@ async function loadSheetFromAirtable(emp, periodOverride){
       if(at.start     && at.start!==lr.start)    {lr.start=at.start;changed=true;}
       if(at.end       && at.end!==lr.end)        {lr.end=at.end;changed=true;}
       if(at.lunch     && at.lunch!==lr.lunch)    {lr.lunch=at.lunch;changed=true;}
-      if(at.pause     && at.pause!==lr.pause)    {lr.pause=at.pause;changed=true;}
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
     });
@@ -2247,11 +2332,7 @@ async function syncFullSheetToAirtable(eid, pk){
   const emp = DB.employees.find(e => e.id === eid) || currentEmp();
   if(!emp || !emp.airtableId){ console.log('syncFullSheet: pas airtableId pour', eid); return; }
   const sheetKey = pk ? `${eid}_${pk}` : `${emp.id}_${PERIOD.current().key}`;
-  if(_syncLocks.has(sheetKey)){
-    _pendingSync.add(sheetKey);
-    console.log('syncFullSheet: en cours, mise en attente', sheetKey);
-    return;
-  }
+  if(_syncLocks.has(sheetKey)){ console.log('syncFullSheet: déjà en cours, skip', sheetKey); return; }
   _syncLocks.add(sheetKey);
   const sheet = DB.timesheets[sheetKey];
   if(!sheet){ _syncLocks.delete(sheetKey); return; }
@@ -2263,7 +2344,7 @@ async function syncFullSheetToAirtable(eid, pk){
 
   // Envoyer chaque ligne qui a des données — une requête par ligne
 const rowsWithData = sheet.rows.filter(r => 
-  r.start || r.end || r.lunch || r.pause || r.notes || r.adminNote
+  r.start || r.end || r.notes || r.adminNote
 );
   dbg(`Sync: ${emp.name} — ${rowsWithData.length} ligne(s)`);
   dbg(`airtableId: ${emp.airtableId||'VIDE'}`);
@@ -2306,11 +2387,7 @@ const rowsWithData = sheet.rows.filter(r =>
     if(idsCached) save();
   } finally {
     _syncLocks.delete(sheetKey);
-    syncEnd();
-    if(_pendingSync.has(sheetKey)){
-      _pendingSync.delete(sheetKey);
-      setTimeout(() => syncFullSheetToAirtable(eid, pk), 200);
-    }
+  syncEnd();
   }
 }
 
@@ -2430,7 +2507,6 @@ async function resyncAllToAirtable(periodKey){
 
   // Libérer tous les verrous bloqués
   _syncLocks.clear();
-  _pendingSync.clear();
 
   // ÉTAPE 1 : Tirer depuis Airtable vers le local (merge bidirectionnel)
   // Règle : si Airtable a des données et le local est vide, le local est mis à jour.
@@ -2442,8 +2518,6 @@ async function resyncAllToAirtable(periodKey){
   }
 
   // ÉTAPE 2 : Pousser le résultat fusionné vers Airtable
-  // Les recordIds locaux sont conservés (mis à jour par loadSheetFromAirtable)
-  // → PATCH direct sur le bon record, pas de création de doublons
   toast(`⬆️ Envoi vers Airtable (${emps.length} employé(s))…`, 'info', 15000);
   let done = 0;
   for(const emp of emps){
@@ -2469,7 +2543,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   const periodLabel = PERIOD.airtableLabel(periodStart, periodEnd);
 
   // On n'envoie que les lignes qui ont au moins une heure saisie
-  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.lunch || r.pause || r.notes || r.adminNote);
+  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
   const filteredPromises = rowsWithData.map(row => {
     const data = {
       empId:         emp.airtableId,
