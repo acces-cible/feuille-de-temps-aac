@@ -210,7 +210,7 @@ const DataService = {
       timesheets:{},
       periodReminderResets:{},
       changeLog:[],
-      holidayPay:{}  // { empId: { periodKey: overrideMinutes } }
+      holidayPay:{}
     };
   }
 };
@@ -301,55 +301,60 @@ function calcWorked(s,e,l,p){ if(s===null||e===null)return null; const w=e-s-(l|
 // ================================================================
 //  HOLIDAY PAY HELPERS
 // ================================================================
-// Arrondir au 15 minutes supérieur (ceiling)
 function ceilTo15(mins){
-  if(!mins || mins <= 0) return 0;
-  return Math.ceil(mins / 15) * 15;
+  if(!mins||mins<=0) return 0;
+  return Math.ceil(mins/15)*15;
 }
 
-// Calculer les heures de congé férié pour un employé et une période
-// = (totalMinutes des 2 périodes précédentes) * 0.05, arrondi au 15min supérieur
 function calcHolidayPay(empId, periodKey){
   const allPeriods = PERIOD.list(24);
-  const curIdx = allPeriods.findIndex(p => p.key === periodKey);
-  if(curIdx < 0) return 0;
-  // 2 périodes précédentes (indices curIdx+1 et curIdx+2 dans la liste)
-  const prev1 = allPeriods[curIdx + 1];
-  const prev2 = allPeriods[curIdx + 2];
+  const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+  if(curIdx<0) return 0;
+  const prev1 = allPeriods[curIdx+1];
+  const prev2 = allPeriods[curIdx+2];
   let total = 0;
-  [prev1, prev2].forEach(p => {
+  [prev1,prev2].forEach(p=>{
     if(!p) return;
     const sheet = DB.timesheets[`${empId}_${p.key}`];
-    if(sheet) total += (sheet.totalMinutes || calcSheetTotal(sheet));
+    if(sheet) total += (sheet.totalMinutes||calcSheetTotal(sheet));
   });
-  return ceilTo15(Math.round(total * 0.05));
+  return ceilTo15(Math.round(total*0.05));
 }
 
-// Obtenir la valeur effective (override ou calculée)
 function getHolidayPay(empId, periodKey){
-  if(DB.holidayPay[empId] && DB.holidayPay[empId][periodKey] !== undefined){
+  if(DB.holidayPay[empId]&&DB.holidayPay[empId][periodKey]!==undefined)
     return DB.holidayPay[empId][periodKey];
-  }
   return calcHolidayPay(empId, periodKey);
 }
 
-// Sauvegarder un override
 function setHolidayPay(empId, periodKey, rawVal){
   const parsed = parseTime(rawVal);
-  if(!DB.holidayPay[empId]) DB.holidayPay[empId] = {};
-  if(parsed === null){
-    // Champ vide → supprimer l'override (retour au calcul auto)
-    delete DB.holidayPay[empId][periodKey];
-  } else {
-    DB.holidayPay[empId][periodKey] = ceilTo15(parsed);
-  }
+  if(!DB.holidayPay[empId]) DB.holidayPay[empId]={};
+  if(parsed===null){ delete DB.holidayPay[empId][periodKey]; }
+  else { DB.holidayPay[empId][periodKey]=ceilTo15(parsed); }
   save();
-  // Mettre à jour l'affichage du champ avec la valeur arrondie
-  const el2 = document.getElementById(`hp-${empId}-${periodKey}`);
-  if(el2) el2.textContent = fmtMins(getHolidayPay(empId, periodKey));
-  // Aussi mettre à jour le champ de saisie s'il existe
-  const inp = document.getElementById(`hp-inp-${empId}-${periodKey}`);
-  if(inp) inp.value = fmtMins(getHolidayPay(empId, periodKey));
+  const inp=document.getElementById(`hp-inp-${empId}-${periodKey}`);
+  if(inp) inp.value=fmtMins(getHolidayPay(empId,periodKey));
+  const inp2=document.getElementById(`hp-arch-inp-${empId}`);
+  if(inp2) inp2.value=fmtMins(getHolidayPay(empId,periodKey));
+}
+
+// Convertir minutes → "HH:MM" string (pour start/end)
+function minsToHHMM(mins){
+  if(!mins&&mins!==0) return '00:00';
+  return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
+}
+
+// Retourner les 2 périodes précédentes avec leurs totaux (pour tooltip)
+function getHolidayPaySources(empId, periodKey){
+  const allPeriods = PERIOD.list(24);
+  const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+  if(curIdx<0) return [];
+  return [allPeriods[curIdx+1],allPeriods[curIdx+2]].filter(Boolean).map(p=>{
+    const sheet = DB.timesheets[`${empId}_${p.key}`];
+    const mins = sheet?(sheet.totalMinutes||calcSheetTotal(sheet)):0;
+    return {label:PERIOD.label(p.start,p.end), mins};
+  });
 }
 
 // Convert stored value → HH:MM for <input type="time">
@@ -467,7 +472,6 @@ DB.employees.forEach(emp=>{
 Object.values(DB.timesheets||{}).forEach(sheet=>{
   (sheet.rows||[]).forEach(row=>{ if(row.adminNote===undefined) row.adminNote=''; });
 });
-// Migrate holidayPay store
 if(!DB.holidayPay) DB.holidayPay = {};
 
 // Les employés viennent de Airtable via getEmployees au démarrage.
@@ -888,6 +892,8 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="quickFill('${empId}','${period.key}',${i},'Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px">Congé</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px">Maladie</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Jour</button>
+            <button onclick="quickFill('${empId}','${period.key}',${i},'Absent')" class="btn" style="padding:2px 6px;font-size:11px;background:#64748b;color:white">Absent</button>
+            ${isAdmin?`<button onclick="quickFill('${empId}','${period.key}',${i},'Férié')" class="btn" style="padding:2px 6px;font-size:11px;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉 Férié</button>`:''}
             <button onclick="clearRow('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
           </div>
         </td>
@@ -1013,10 +1019,12 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   bm.addEventListener('click',()=>quickFill(empId,periodKey,i,'Maladie'));
   const bdj=el('button','btn btn-blue flex-1'); bdj.style.padding='10px'; bdj.textContent='½ Demi-journée';
   bdj.addEventListener('click',()=>quickFill(empId,periodKey,i,'Demi-journée'));
+  const babs=el('button','btn flex-1'); babs.style.cssText='padding:10px;background:#64748b;color:white;'; babs.textContent='🚫 Absent';
+  babs.addEventListener('click',()=>quickFill(empId,periodKey,i,'Absent'));
   const bclr=el('button','btn btn-red'); bclr.style.cssText='padding:10px;flex:0 0 auto;';
   bclr.textContent='✕ Effacer';
   bclr.addEventListener('click',()=>clearRow(empId,periodKey,i));
-  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj); btnRow.appendChild(bclr);
+  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj); btnRow.appendChild(babs); btnRow.appendChild(bclr);
   notesWrap.appendChild(btnRow);
 
   inner.appendChild(notesWrap);
@@ -1092,16 +1100,23 @@ function quickFill(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row = DB.timesheets[key].rows[rowIdx];
-  row.notes = value;
-  // Auto-fill 7h30 (09:00 → 16:30, sans dîner) pour Congé et Maladie
-  if(value === 'Congé' || value === 'Maladie'){
-    if(!row.start) row.start = '09:00';
-    if(!row.end)   row.end   = '16:30';
-    if(!row.lunch) row.lunch = '';
+  // Si notes déjà remplies pour Férié admin, ne pas écraser
+  if(value==='Férié' && row.notes && row.notes!=='Férié'){
+    toast('Notes déjà remplies pour cette journée.','info'); return;
   }
-  // Recalculer le total de la feuille
-  const sheet = DB.timesheets[key];
-  sheet.totalMinutes = calcSheetTotal(sheet);
+  row.notes = value;
+  if(value==='Congé'||value==='Maladie'){
+    row.start='00:00'; row.end='07:30'; row.lunch='';
+  } else if(value==='Absent'){
+    row.start='00:00'; row.end='00:00'; row.lunch='';
+  } else if(value==='Férié'){
+    const hpMins = getHolidayPay(empId, periodKey);
+    row.start='00:00';
+    row.end=minsToHHMM(hpMins);
+    row.lunch='';
+  }
+  const sheet=DB.timesheets[key];
+  sheet.totalMinutes=calcSheetTotal(sheet);
   save();
   syncFullSheetToAirtable(empId, periodKey);
   render();
@@ -1510,9 +1525,14 @@ function renderOverview(period){
     const isZero=tot===0;
     const bc=isZero?(emp.partTime?'border-l-4 border-purple-400':'border-l-4 border-red-400'):'border-l-4 border-transparent';
     const card=el('div',`card mb-3 overflow-hidden ${bc}`);
+    // Holiday pay
     const hpCalc = calcHolidayPay(emp.id, period.key);
     const hpEff  = getHolidayPay(emp.id, period.key);
     const hpIsOverride = DB.holidayPay[emp.id]?.[period.key] !== undefined;
+    const hpSources = getHolidayPaySources(emp.id, period.key);
+    const hpTooltip = hpSources.length
+      ? hpSources.map(s=>`${s.label} : ${fmtMins(s.mins)}`).join(' | ') + ` → ×5% = ${fmtMins(hpCalc)}`
+      : 'Aucune période précédente';
     const ch=el('div','px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-slate-50 border-b');
     ch.innerHTML=`
       <div class="flex items-center gap-3">
@@ -1526,17 +1546,25 @@ function renderOverview(period){
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <span class="mono text-sm font-semibold ${isZero?(emp.partTime?'text-purple-600':'text-red-600'):'text-slate-700'}" id="gt-${emp.id}">${fmtMins(tot)}</span>
-        <!-- Congé férié -->
-        <div class="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1" title="Indemnité de congé férié = (2 périodes précédentes × 5%), arrondi au 15min supérieur">
-          <span class="text-xs text-amber-700 font-semibold">🎉 Férié</span>
+        <!-- Congé férié badge -->
+        <div class="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 relative group">
+          <span class="text-xs text-amber-700 font-semibold whitespace-nowrap">🎉 Férié</span>
           <input type="text" id="hp-inp-${emp.id}-${period.key}"
             class="mono text-xs font-bold text-amber-800 bg-transparent border-none outline-none w-14 text-center"
             style="border-bottom:1px dashed #d97706;cursor:text"
             value="${fmtMins(hpEff)}"
-            title="Modifier l'indemnité (calcul auto: ${fmtMins(hpCalc)})"
             onchange="setHolidayPay('${emp.id}','${period.key}',this.value)"
             onblur="setHolidayPay('${emp.id}','${period.key}',this.value)"/>
-          ${hpIsOverride?`<button onclick="DB.holidayPay['${emp.id}']['${period.key}']=undefined;delete DB.holidayPay['${emp.id}']['${period.key}'];save();render()" class="text-amber-400 hover:text-amber-600 text-xs leading-none" title="Réinitialiser au calcul auto (${fmtMins(hpCalc)})">↺</button>`:''}
+          ${hpIsOverride?`<button onclick="delete DB.holidayPay['${emp.id}']['${period.key}'];save();render()" class="text-amber-400 hover:text-amber-600 text-xs" title="Réinitialiser (auto: ${fmtMins(hpCalc)})">↺</button>`:''}
+          <!-- Tooltip sources -->
+          <div class="absolute top-full left-0 mt-1 z-50 hidden group-hover:block bg-slate-800 text-white text-xs rounded-lg px-3 py-2 shadow-xl whitespace-nowrap" style="min-width:280px">
+            ${hpSources.map(s=>`<div class="flex justify-between gap-4"><span class="text-slate-300">${s.label}</span><span class="mono font-bold">${fmtMins(s.mins)}</span></div>`).join('')}
+            <div class="border-t border-slate-600 mt-1 pt-1 flex justify-between gap-4">
+              <span class="text-amber-300">Somme × 5% → arrondi 15min</span>
+              <span class="mono font-bold text-amber-300">${fmtMins(hpCalc)}</span>
+            </div>
+            ${hpIsOverride?`<div class="text-amber-400 text-xs mt-1">✏ Valeur modifiée manuellement: ${fmtMins(hpEff)}</div>`:''}
+          </div>
         </div>
         ${sheet?.approved
           ?`<span class="badge-approved">✓ Approuvé</span><button onclick="unlockSheet('${emp.id}','${period.key}')" class="btn btn-gray text-xs">🔓 Déverrouiller</button>`
@@ -1814,7 +1842,7 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
     <table><thead><tr class="nav-navy">
       <th class="text-left pl-3">Employé</th>
       <th>Total heures</th>
-      ${hasPeriodFilter?'<th title="Indemnité de congé férié = (2 périodes précédentes × 5%), arrondi au 15min supérieur">🎉 Congé férié</th><th>Statut</th><th></th>':''}
+      ${hasPeriodFilter?'<th title="(2 périodes précédentes × 5%), arrondi au 15min supérieur">🎉 Congé férié</th><th>Statut</th><th></th>':''}
     </tr></thead>
     <tbody>${(summaryEmp||[]).filter(Boolean).map(emp=>{
       const tot=(summaryPeriods||[]).filter(Boolean).reduce((s,p)=>{
@@ -1822,24 +1850,30 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
       },0);
       const sheet=hasPeriodFilter?DB.timesheets[`${emp.id}_${state.archiveFilter.period}`]:null;
       const approved=sheet?.approved;
-      const hpKey = state.archiveFilter.period;
-      const hpCalc = hasPeriodFilter ? calcHolidayPay(emp.id, hpKey) : 0;
-      const hpEff  = hasPeriodFilter ? getHolidayPay(emp.id, hpKey) : 0;
-      const hpIsOverride = hasPeriodFilter && DB.holidayPay[emp.id]?.[hpKey] !== undefined;
+      const hpKey=state.archiveFilter.period;
+      const hpCalc=hasPeriodFilter?calcHolidayPay(emp.id,hpKey):0;
+      const hpEff=hasPeriodFilter?getHolidayPay(emp.id,hpKey):0;
+      const hpIsOverride=hasPeriodFilter&&DB.holidayPay[emp.id]?.[hpKey]!==undefined;
+      const hpSources=hasPeriodFilter?getHolidayPaySources(emp.id,hpKey):[];
+      const hpTooltip=hpSources.map(s=>`${s.label}: ${fmtMins(s.mins)}`).join(' | ')+(hpSources.length?` → ×5%=${fmtMins(hpCalc)}`:'');
       return `<tr>
         <td class="text-left pl-3">${emp.name}</td>
         <td class="total-cell">${fmtMins(tot)}</td>
         ${hasPeriodFilter?`
           <td>
             <div class="flex items-center justify-center gap-1">
+              <div class="text-xs text-slate-400 whitespace-nowrap" title="${hpTooltip}" style="cursor:help">
+                ${hpSources.map(s=>`<span class="mono">${fmtMins(s.mins)}</span>`).join('<span class="text-slate-300 mx-0.5">+</span>')}
+                ${hpSources.length?'<span class="text-slate-300 mx-0.5">→</span>':''}
+              </div>
               <input type="text" id="hp-arch-inp-${emp.id}"
                 class="mono text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center"
-                style="width:72px;cursor:text"
+                style="width:68px"
                 value="${fmtMins(hpEff)}"
-                title="Modifier (calcul auto: ${fmtMins(hpCalc)})"
+                title="${hpTooltip}"
                 onchange="setHolidayPay('${emp.id}','${hpKey}',this.value)"
                 onblur="setHolidayPay('${emp.id}','${hpKey}',this.value)"/>
-              ${hpIsOverride?`<button onclick="DB.holidayPay['${emp.id}']['${hpKey}']=undefined;delete DB.holidayPay['${emp.id}']['${hpKey}'];save();render()" class="text-amber-500 hover:text-amber-700 text-xs" title="Réinitialiser (auto: ${fmtMins(hpCalc)})">↺</button>`:'<span class="text-xs text-slate-300 ml-1" title="Valeur calculée automatiquement">auto</span>'}
+              ${hpIsOverride?`<button onclick="delete DB.holidayPay['${emp.id}']['${hpKey}'];save();render()" class="text-amber-500 hover:text-amber-700 text-xs" title="Réinitialiser (auto: ${fmtMins(hpCalc)})">↺</button>`:'<span class="text-slate-300 text-xs">auto</span>'}
             </div>
           </td>
           <td>${approved
