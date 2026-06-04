@@ -1100,8 +1100,8 @@ function quickFill(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row = DB.timesheets[key].rows[rowIdx];
-  // Si notes déjà remplies pour Férié admin, ne pas écraser
-  if(value==='Férié' && row.notes && row.notes!=='Férié'){
+  // Si notes déjà remplies pour Férié admin, ne pas écraser (sauf si c'est déjà un Férié)
+  if(value==='Férié' && row.notes && !row.notes.startsWith('Férié')){
     toast('Notes déjà remplies pour cette journée.','info'); return;
   }
   row.notes = value;
@@ -1111,6 +1111,9 @@ function quickFill(empId,periodKey,rowIdx,value){
     row.start='00:00'; row.end='00:00'; row.lunch='';
   } else if(value==='Férié'){
     const hpMins = getHolidayPay(empId, periodKey);
+    const sources = getHolidayPaySources(empId, periodKey);
+    const srcStr = sources.map(s=>fmtMins(s.mins)).join(' + ');
+    row.notes = `Férié - ${srcStr} × 5% = ${fmtMins(hpMins)}`;
     row.start='00:00';
     row.end=minsToHHMM(hpMins);
     row.lunch='';
