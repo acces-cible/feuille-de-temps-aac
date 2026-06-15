@@ -151,7 +151,6 @@ function dbg(msg, type='info'){
   const panel = document.getElementById('debug-panel');
   const log   = document.getElementById('debug-log');
   if(!panel || !log) return;
-  // Ne pas ouvrir automatiquement — seulement logguer si déjà ouvert
   const line = document.createElement('div');
   line.className = 'dp-line' + (type==='error'?' err':type==='ok'?' ok':'');
   const t = new Date().toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -182,12 +181,11 @@ function logChange(empId, date, field, oldVal, newVal){
     old: oldVal, new: newVal,
     by: who
   });
-  // Garder seulement les 500 dernières entrées
   if(DB.changeLog.length > 500) DB.changeLog.length = 500;
 }
 
 // ================================================================
-//  DATA SERVICE — localStorage now, swap .load()/.save() for Airtable later
+//  DATA SERVICE
 // ================================================================
 const DataService = {
   KEY: 'fdt_db_v6',
@@ -198,7 +196,6 @@ const DataService = {
       adminPassword:'admin123',
       reminderTemplate:"Bonjour [Prénom], n'oublie pas de soumettre ta feuille de temps pour la période en cours. Merci!",
       employees:[
-        // ⚠️ Remplacez chaque airtableId par le RECORD_ID de l'employé dans Airtable (ex: recXXXXXXXXXXXXXX)
         {id:'emp1',name:'Guillaume Chiasson-Poupart',email:'',phone:'',partTime:false,reminderCount:0,password:null,autoFill:false,inputMode:'clock',airtableId:''},
         {id:'emp2',name:'Alahin Izquierdo Camejo',   email:'',phone:'',partTime:false,reminderCount:0,password:null,autoFill:false,inputMode:'clock',airtableId:''},
         {id:'emp3',name:'Aurélie Cynthia Dubeau',    email:'',phone:'',partTime:true, reminderCount:0,password:null,autoFill:false,inputMode:'clock',airtableId:''},
@@ -209,10 +206,115 @@ const DataService = {
       ],
       timesheets:{},
       periodReminderResets:{},
-      changeLog:[]
+      changeLog:[],
+      holidayPay:{}
     };
   }
 };
+
+// ================================================================
+//  SYNC QUEUE — retry automatique si réseau coupé (mobile)
+//  MODIFICATION 3: bloc SyncQueue complet
+// ================================================================
+const SyncQueue = {
+  KEY: 'fdt_syncqueue_v1',
+  add(data){
+    let q = this.getAll();
+    const idx = q.findIndex(x => x.empId === data.empId && x.date === data.date);
+    if(idx >= 0) q[idx] = { ...data, _ts: Date.now() };
+    else q.push({ ...data, _ts: Date.now() });
+    if(q.length > 200) q = q.slice(-200);
+    try{ localStorage.setItem(this.KEY, JSON.stringify(q)); } catch(e){}
+    updateSyncBadge();
+  },
+  remove(empId, date){
+    const q = this.getAll().filter(x => !(x.empId === empId && x.date === date));
+    try{ localStorage.setItem(this.KEY, JSON.stringify(q)); } catch(e){}
+    updateSyncBadge();
+  },
+  getAll(){
+    try{ return JSON.parse(localStorage.getItem(this.KEY) || '[]'); } catch{ return []; }
+  },
+  size(){ return this.getAll().length; },
+  async flush(){
+    const q = this.getAll();
+    if(q.length === 0) return;
+    console.log(`SyncQueue.flush: ${q.length} entrée(s) en attente`);
+    let flushed = 0;
+    for(const data of q){
+      try{
+        const resp = await fetch('/api/syncairtable', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if(resp.ok){
+          const json = await resp.json();
+          if(json.recordId){
+            const emp = DB.employees.find(e => e.airtableId === data.empId);
+            if(emp){
+              Object.values(DB.timesheets).forEach(sheet => {
+                const row = sheet?.rows?.find(r => r.date === data.date);
+                if(row && !row.airtableRecordId) row.airtableRecordId = json.recordId;
+              });
+              DataService.save(DB);
+            }
+          }
+          this.remove(data.empId, data.date);
+          flushed++;
+          dbg(`✅ Queue flush: ${data.date}`, 'ok');
+        }
+      } catch(e){
+        dbg(`Queue flush erreur ${data.date}: ${e.message}`, 'error');
+      }
+    }
+    if(flushed > 0) toast(`✅ ${flushed} entrée(s) synchronisée(s)`, 'success', 3000);
+    updateSyncBadge();
+  }
+};
+
+// Met à jour le badge de statut sur une carte mobile (ou ligne desktop)
+function updateRowSyncBadge(empId, date, status){
+  const el = document.getElementById(`row-sync-${empId}-${date}`);
+  if(!el) return;
+  const configs = {
+    pending: { bg:'#f59e0b', text:'⏳ En attente',  title:'Données sauvegardées localement, envoi en cours…' },
+    ok:      { bg:'#16a34a', text:'☁️ Sauvegardé',  title:'Données sauvegardées dans Airtable' },
+    error:   { bg:'#dc2626', text:'❌ Erreur sync',  title:"Erreur lors de l'envoi — sera retenté automatiquement" },
+  };
+  const cfg = configs[status] || configs.pending;
+  el.style.background = cfg.bg;
+  el.textContent = cfg.text;
+  el.title = cfg.title;
+  el.style.display = 'inline-block';
+}
+
+function updateSyncBadge(){
+  const count = SyncQueue.size();
+  let badge = document.getElementById('sync-queue-badge');
+  if(count > 0){
+    if(!badge){
+      badge = document.createElement('div');
+      badge.id = 'sync-queue-badge';
+      badge.style.cssText = 'position:fixed;bottom:70px;left:16px;z-index:30;background:#f59e0b;color:white;'
+        + 'border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;'
+        + 'box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;';
+      badge.title = 'Tap pour réessayer la synchronisation';
+      badge.onclick = () => SyncQueue.flush();
+      document.body.appendChild(badge);
+    }
+    badge.textContent = `⏳ ${count} non sync. — Tap pour réessayer`;
+  } else {
+    if(badge) badge.remove();
+  }
+}
+
+// Retry au chargement + toutes les 30s + quand la connexion revient
+window.addEventListener('online', () => {
+  toast('Connexion rétablie — synchronisation en cours…', 'info', 3000);
+  SyncQueue.flush();
+});
+setInterval(() => SyncQueue.flush(), 30_000);
 
 // ================================================================
 //  PERIOD LOGIC
@@ -228,11 +330,9 @@ const PERIOD = {
     return {start,end,key:this.key(start)};
   },
   key(start){
-    // Utiliser la date locale pour eviter le decalage UTC
     const y=start.getFullYear(),m=String(start.getMonth()+1).padStart(2,'0'),d=String(start.getDate()).padStart(2,'0');
     return `${y}-${m}-${d}`;
   },
-  // Format période pour Airtable: "2026-04-06 – 2026-04-19"
   airtableLabel(start,end){
     const ymdLocal=d=>{ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; };
     return `${ymdLocal(start)} – ${ymdLocal(end)}`;
@@ -261,7 +361,6 @@ function dayLabel(d){ return d.toLocaleDateString('fr-CA',{weekday:'short',day:'
 function dayLabelLong(d){ return d.toLocaleDateString('fr-CA',{weekday:'long',day:'numeric',month:'long'}); }
 function isWeekend(d){ const w=d.getDay(); return w===0||w===6; }
 
-// Date locale YYYY-MM-DD sans conversion UTC (evite le decalage de fuseau)
 function localDateStr(d){
   const date = d || new Date();
   const y=date.getFullYear();
@@ -277,7 +376,6 @@ function firstName(n){ return (n||'').split(' ')[0]; }
 function parseTime(str){
   if(!str||!str.toString().trim()) return null;
   let s=str.toString().trim().toLowerCase().replace(',','.');
-  // Decimal format: 7.5 → 450 min, 0.5 → 30 min
   if(!s.includes('h')&&!s.includes(':')&&s.includes('.')){
     const val=parseFloat(s);
     return(isNaN(val)||val<0)?null:Math.round(val*60);
@@ -297,7 +395,63 @@ function fmtMins(mins){
 }
 function calcWorked(s,e,l,p){ if(s===null||e===null)return null; const w=e-s-(l||0)-(p||0); return w<0?0:w; }
 
-// Convert stored value → HH:MM for <input type="time">
+// ================================================================
+//  HOLIDAY PAY HELPERS
+// ================================================================
+function ceilTo15(mins){
+  if(!mins||mins<=0) return 0;
+  return Math.ceil(mins/15)*15;
+}
+
+function calcHolidayPay(empId, periodKey){
+  const allPeriods = PERIOD.list(24);
+  const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+  if(curIdx<0) return 0;
+  const prev1 = allPeriods[curIdx+1];
+  const prev2 = allPeriods[curIdx+2];
+  let total = 0;
+  [prev1,prev2].forEach(p=>{
+    if(!p) return;
+    const sheet = DB.timesheets[`${empId}_${p.key}`];
+    if(sheet) total += (sheet.totalMinutes||calcSheetTotal(sheet));
+  });
+  return ceilTo15(Math.round(total*0.05));
+}
+
+function getHolidayPay(empId, periodKey){
+  if(DB.holidayPay[empId]&&DB.holidayPay[empId][periodKey]!==undefined)
+    return DB.holidayPay[empId][periodKey];
+  return calcHolidayPay(empId, periodKey);
+}
+
+function setHolidayPay(empId, periodKey, rawVal){
+  const parsed = parseTime(rawVal);
+  if(!DB.holidayPay[empId]) DB.holidayPay[empId]={};
+  if(parsed===null){ delete DB.holidayPay[empId][periodKey]; }
+  else { DB.holidayPay[empId][periodKey]=ceilTo15(parsed); }
+  save();
+  const inp=document.getElementById(`hp-inp-${empId}-${periodKey}`);
+  if(inp) inp.value=fmtMins(getHolidayPay(empId,periodKey));
+  const inp2=document.getElementById(`hp-arch-inp-${empId}`);
+  if(inp2) inp2.value=fmtMins(getHolidayPay(empId,periodKey));
+}
+
+function minsToHHMM(mins){
+  if(!mins&&mins!==0) return '00:00';
+  return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
+}
+
+function getHolidayPaySources(empId, periodKey){
+  const allPeriods = PERIOD.list(24);
+  const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+  if(curIdx<0) return [];
+  return [allPeriods[curIdx+1],allPeriods[curIdx+2]].filter(Boolean).map(p=>{
+    const sheet = DB.timesheets[`${empId}_${p.key}`];
+    const mins = sheet?(sheet.totalMinutes||calcSheetTotal(sheet)):0;
+    return {label:PERIOD.label(p.start,p.end), mins};
+  });
+}
+
 function toTimeVal(str){
   const m=parseTime(str);
   if(m===null) return '';
@@ -305,11 +459,11 @@ function toTimeVal(str){
 }
 
 // ================================================================
-//  LIVE CALC — updates row total + period total without re-render
+//  LIVE CALC
 // ================================================================
-const _syncTimers = {}; // debounce timers: key = "eid-idx"
-const _syncLocks  = new Set(); // évite les exécutions parallèles de syncFullSheet
-const _fieldOriginals = {}; // capture valeur originale au focus pour le log
+const _syncTimers = {};
+const _syncLocks  = new Set();
+const _fieldOriginals = {};
 
 function captureOriginal(eid,pk,idx,field,val){
   const key=`${eid}_${pk}_${idx}_${field}`;
@@ -334,7 +488,6 @@ function liveCalc(eid,pk,idx,field,val,shouldLog=false){
   const worked=(s!==null&&e!==null)?Math.max(0,e-s-l-p):null;
   const rc=document.getElementById(`row-t-${eid}-${idx}`);
   if(rc) rc.textContent=fmtMins(worked);
-  // Validation: alerte si journée dépasse 10h
   if(worked !== null && worked > 600){
     const d = new Date(sheet.rows[idx].date + 'T00:00:00');
     toast(`⚠️ ${dayLabel(d)} — ${fmtMins(worked)} dépasse 10h`, 'error', 5000);
@@ -350,8 +503,34 @@ function liveCalc(eid,pk,idx,field,val,shouldLog=false){
   const ga=document.getElementById(`gt-${eid}`); if(ga) ga.textContent=fmtMins(gt);
   DataService.save(DB);
 
-  // Debounce: attendre 1.5s sans frappe puis sync TOUTE la feuille en une requete
-  // Une seule requete batch = plus fiable, moins de doublons
+  // Mettre en queue immédiatement (avant le debounce)
+  // Si l'onglet est fermé dans les 1.5s, la donnée est déjà protégée
+  const emp = DB.employees.find(e => e.id === eid) || currentEmp();
+  if(emp?.airtableId){
+    const periodForLabel = pk
+      ? (PERIOD.list(24).find(p => p.key === pk) || PERIOD.current())
+      : PERIOD.current();
+    const periodLabel = PERIOD.airtableLabel(periodForLabel.start, periodForLabel.end);
+    const row = sheet.rows[idx];
+    if(row.start || row.end || row.notes || row.adminNote){
+      SyncQueue.add({
+        empId:         emp.airtableId,
+        date:          row.date,
+        start:         row.start     || '',
+        end:           row.end       || '',
+        lunch:         row.lunch     || '',
+        pause:         row.pause     || '',
+        notes:         row.notes     || '',
+        adminNote:     row.adminNote || '',
+        periodeDePaie: periodLabel,
+        total:         (()=>{ const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0,p=parseTime(row.pause)||0; return (s!==null&&e!==null)?fmtMins(Math.max(0,e-s-l-p)):''; })(),
+        recordId:      row.airtableRecordId || undefined
+      });
+      // Afficher immédiatement le badge "En attente" sur la carte mobile
+      updateRowSyncBadge(eid, row.date, 'pending');
+    }
+  }
+
   const sheetTimerKey = `${eid}-${pk}`;
   clearTimeout(_syncTimers[sheetTimerKey]);
   _syncTimers[sheetTimerKey] = setTimeout(() => {
@@ -375,7 +554,6 @@ function autoBackup(db,reason='backup'){
 //  SHEET FACTORY
 // ================================================================
 function makeRow(date){
-  // Utilise la date locale (pas UTC) pour éviter le décalage de fuseau horaire
   const y=date.getFullYear();
   const m=String(date.getMonth()+1).padStart(2,'0');
   const d=String(date.getDate()).padStart(2,'0');
@@ -393,33 +571,29 @@ function calcSheetTotal(sheet){
 }
 
 // ================================================================
-//  STATE  —  currentUser stores the full employee OBJECT (Airtable-ready)
+//  STATE
 // ================================================================
 let DB = DataService.load() || DataService.getDefault();
 
-// Migrate old employee records to new schema
 DB.employees.forEach(emp=>{
   if(emp.password===undefined)  emp.password=null;
   if(!emp.email) emp.email=(emp.contactType==='Email'?emp.contact||'':'');
   if(!emp.phone) emp.phone=(emp.contactType==='Phone'?emp.contact||'':'');
   if(emp.autoFill===undefined)  emp.autoFill=false;
-  if(emp.inputMode===undefined) emp.inputMode='clock'; // 'clock' | 'text'
-  // airtableId — populated when you connect Airtable (Step 3 of migration guide)
+  if(emp.inputMode===undefined) emp.inputMode='clock';
   if(emp.airtableId===undefined) emp.airtableId='';
   if(emp.archived===undefined) emp.archived=false;
 });
-// Migrate timesheet rows
 Object.values(DB.timesheets||{}).forEach(sheet=>{
   (sheet.rows||[]).forEach(row=>{ if(row.adminNote===undefined) row.adminNote=''; });
 });
+if(!DB.holidayPay) DB.holidayPay = {};
 
-// Les employés viennent de Airtable via getEmployees au démarrage.
-// On s'assure juste que le schéma local est à jour.
 DataService.save(DB);
 
 let state = {
-  view:'login',            // login | empPassword | employee | empProfile | admin
-  currentUser:null,        // full employee OBJECT (not just id) — or 'admin'
+  view:'login',
+  currentUser:null,
   adminTab:'overview',
   archiveFilter:{name:'',period:''},
   archiveSearch:'',
@@ -431,8 +605,8 @@ let state = {
   addEmpForm:{name:'',email:'',phone:'',partTime:false},
   conflictResolutions:{}, bulkOverwrite:false,
   loginPendingEmpId:null,
-  empTab:'current',        // 'current' | 'history'
-  empHistoryPeriod:null, // period key selected in history
+  empTab:'current',
+  empHistoryPeriod:null,
   showArchivedInFilter: false,
 };
 const _archiveLoadedPeriods = new Set();
@@ -445,10 +619,8 @@ function sortedEmployees(){
     .sort((a,b) => a.name.localeCompare(b.name, "fr", {sensitivity:"base"}));
 }
 
-// Convenience: get current employee object regardless of how currentUser is stored
 function currentEmp(){
   if(!state.currentUser||state.currentUser==='admin') return null;
-  // Support both legacy (id string) and new (object) format
   if(typeof state.currentUser==='object') return DB.employees.find(e=>e.id===state.currentUser.id)||state.currentUser;
   return DB.employees.find(e=>e.id===state.currentUser)||null;
 }
@@ -512,7 +684,6 @@ function renderLogin(){
   return wrap;
 }
 
-// Login functions — store full emp object in state.currentUser (Airtable-ready)
 function startEmpLogin(id){
   const emp=DB.employees.find(e=>e.id===id);
   if(!emp) return;
@@ -551,15 +722,12 @@ function tryEmpLogin(){
   else document.getElementById('emp-login-err').classList.remove('hidden');
 }
 
-// finishEmpLogin — charge la feuille depuis Airtable puis affiche
 async function finishEmpLogin(emp){
   state.currentUser=emp;
   state.view='employee';
   state.loginPendingEmpId=null;
   checkPeriodReset();
-  // Afficher immediatement avec donnees locales (cache)
   render();
-  // Puis synchroniser depuis Airtable en arriere-plan
   await loadSheetFromAirtable(emp);
 }
 
@@ -588,7 +756,6 @@ function checkPeriodResetAdmin(){
     DB.employees.forEach(e=>{e.reminderCount=0;});
     save();
     DB.employees.forEach(e=>{ if(e.airtableId) syncEmpPrefsToAirtable(e.id); });
-
   }
 }
 
@@ -598,9 +765,7 @@ function checkPeriodReset(){
     DB.periodReminderResets[p.key]=true;
     DB.employees.forEach(e=>{e.reminderCount=0;});
     save();
-    // Sync le reset vers Airtable pour tous les employés
     DB.employees.forEach(e=>{ if(e.airtableId) syncEmpPrefsToAirtable(e.id); });
-    // Note: initPeriodAirtable est appelé seulement par l'admin via checkPeriodResetAdmin()
   }
 }
 
@@ -633,7 +798,6 @@ function renderEmployee(){
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
 
-  // Tabs
   const tabs=el('div','bg-white border-b flex gap-0 px-2');
   [['current','📋 Période courante'],['history','🕐 Historique']].forEach(([key,label])=>{
     const btn=el('button',`px-4 py-3 text-sm whitespace-nowrap ${state.empTab===key?'tab-active':'text-slate-500 hover:text-slate-700'}`);
@@ -664,12 +828,10 @@ function renderEmployee(){
   const content=el('div','max-w-5xl mx-auto px-3 py-4 pb-28');
   content.innerHTML=reminderHtml+autoFillHtml;
 
-  // Desktop table
   const deskWrap=el('div','desktop-only card overflow-x-auto');
   deskWrap.appendChild(buildDesktopTable(sheet,false,emp.id,period));
   content.appendChild(deskWrap);
 
-  // Mobile cards with weekly subtotals
   const mobWrap=el('div','mobile-only');
   const week1Mob = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
   const week2Mob = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
@@ -702,7 +864,6 @@ function renderEmployee(){
   return wrap;
 }
 
-// ── Employee History tab (read-only)
 function renderEmpHistory(emp){
   const content=el('div','max-w-5xl mx-auto px-3 py-4 pb-10');
 
@@ -769,7 +930,7 @@ function renderEmpHistory(emp){
 
   return content;
 }
-// ── Desktop table (Journée | Début | Dîner | Fin | Total | Notes | [Note admin])
+
 function buildDesktopTable(sheet,isAdmin,empId,period){
   const emp=DB.employees.find(e=>e.id===empId);
   const table=document.createElement('table');
@@ -785,7 +946,6 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     ${adminNoteCol}
   </tr></thead>`;
   const tbody=document.createElement('tbody');
-  // Calculer sous-totaux semaines
   const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
   const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
   const adminCols = isAdmin ? 1 : 0;
@@ -831,18 +991,18 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="quickFill('${empId}','${period.key}',${i},'Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px">Congé</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px">Maladie</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Jour</button>
+            <button onclick="quickFill('${empId}','${period.key}',${i},'Absent')" class="btn" style="padding:2px 6px;font-size:11px;background:#64748b;color:white">Absent</button>
+            ${isAdmin?`<button onclick="quickFill('${empId}','${period.key}',${i},'Férié')" class="btn" style="padding:2px 6px;font-size:11px;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉 Férié</button>`:''}
             <button onclick="clearRow('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
           </div>
         </td>
         ${adminNoteTd}`;
-      // Inject select dropdowns for lunch and pause
       const lunchCell = tr.querySelector(`#cell-lunch-${empId}-${i}`);
       if(lunchCell) lunchCell.appendChild(makeBreakSelect('lunch', row.lunch, empId, period.key, i, false));
       const pauseCell = tr.querySelector(`#cell-pause-${empId}-${i}`);
       if(pauseCell) pauseCell.appendChild(makeBreakSelect('pause', row.pause||'', empId, period.key, i, false));
     }
     tbody.appendChild(tr);
-    // Sous-total après semaine 1 (index 6) et semaine 2 (index 13)
     if(i === 6 || i === 13){
       const weekNum = i === 6 ? 1 : 2;
       const weekTotal = i === 6 ? week1Total : week2Total;
@@ -859,7 +1019,6 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
   return table;
 }
 
-// ── Mobile card (DOM-based, dual mode: clock picker or free text)
 function buildMobileCard(row,i,approved,empId,periodKey){
   const d=new Date(row.date+'T00:00:00');
   const weekend=isWeekend(d);
@@ -893,6 +1052,24 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   const totalDiv=el('div','mono font-bold text-blue-900 text-lg');
   totalDiv.id=`row-t-${empId}-${i}`;
   totalDiv.textContent=worked!==null?fmtMins(worked):'—';
+
+  // Badge statut sync
+  const syncBadge=document.createElement('span');
+  syncBadge.id=`row-sync-${empId}-${row.date}`;
+  syncBadge.style.cssText='font-size:10px;font-weight:600;color:white;border-radius:10px;padding:2px 8px;margin-left:6px;display:none;cursor:default;';
+  // Déterminer le statut initial
+  const _queuedNow = SyncQueue.getAll().some(x => x.empId === (DB.employees.find(e=>e.id===empId)?.airtableId) && x.date === row.date);
+  if(_queuedNow){
+    syncBadge.style.background='#f59e0b'; syncBadge.textContent='⏳ En attente';
+    syncBadge.title="Données sauvegardées localement, envoi en cours…";
+    syncBadge.style.display='inline-block';
+  } else if(row.airtableRecordId && (row.start||row.end||row.notes)){
+    syncBadge.style.background='#16a34a'; syncBadge.textContent='☁️ Sauvegardé';
+    syncBadge.title='Données sauvegardées dans Airtable';
+    syncBadge.style.display='inline-block';
+  }
+  totalDiv.appendChild(syncBadge);
+
   headerRow.appendChild(dayDiv); headerRow.appendChild(totalDiv);
   inner.appendChild(headerRow);
 
@@ -902,7 +1079,6 @@ function buildMobileCard(row,i,approved,empId,periodKey){
     lbl.textContent=labelTxt;
     col.appendChild(lbl);
     if(useClock && field!=='lunch'){
-      // Native clock picker — fires immediately on time selection
       const inp=document.createElement('input');
       inp.type='time'; inp.className='mobile-time-input';
       inp.lang='fr-CA';
@@ -925,14 +1101,12 @@ function buildMobileCard(row,i,approved,empId,periodKey){
 
   const grid=el('div','grid grid-cols-4 gap-2 mb-3');
   grid.appendChild(makeTimeField('DÉBUT','start',row.start));
-  // Dîner dropdown
   const lunchCol=el('div','');
   const lunchLbl=el('div','field-label mb-1'); lunchLbl.textContent='DÎNER';
   lunchCol.appendChild(lunchLbl);
   lunchCol.appendChild(makeMobileBreakSelect('lunch',row.lunch,empId,periodKey,i));
   grid.appendChild(lunchCol);
   grid.appendChild(makeTimeField('FIN','end',row.end));
-  // Pause dropdown
   const pauseCol=el('div','');
   const pauseLbl=el('div','field-label mb-1'); pauseLbl.textContent='PAUSE';
   pauseCol.appendChild(pauseLbl);
@@ -956,10 +1130,12 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   bm.addEventListener('click',()=>quickFill(empId,periodKey,i,'Maladie'));
   const bdj=el('button','btn btn-blue flex-1'); bdj.style.padding='10px'; bdj.textContent='½ Demi-journée';
   bdj.addEventListener('click',()=>quickFill(empId,periodKey,i,'Demi-journée'));
+  const babs=el('button','btn flex-1'); babs.style.cssText='padding:10px;background:#64748b;color:white;'; babs.textContent='🚫 Absent';
+  babs.addEventListener('click',()=>quickFill(empId,periodKey,i,'Absent'));
   const bclr=el('button','btn btn-red'); bclr.style.cssText='padding:10px;flex:0 0 auto;';
   bclr.textContent='✕ Effacer';
   bclr.addEventListener('click',()=>clearRow(empId,periodKey,i));
-  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj); btnRow.appendChild(bclr);
+  btnRow.appendChild(bc); btnRow.appendChild(bm); btnRow.appendChild(bdj); btnRow.appendChild(babs); btnRow.appendChild(bclr);
   notesWrap.appendChild(btnRow);
 
   inner.appendChild(notesWrap);
@@ -967,8 +1143,6 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   return card;
 }
 
-
-// ── Generate break-time select (15min increments up to 3h)
 function makeBreakSelect(field, value, empId, periodKey, idx, locked){
   const opts = [
     ['','—'],['0.25','15 min'],['0.5','30 min'],['0.75','45 min'],
@@ -992,7 +1166,6 @@ function makeBreakSelect(field, value, empId, periodKey, idx, locked){
   return sel;
 }
 
-// ── Mobile break select (larger for touch)
 function makeMobileBreakSelect(field, value, empId, periodKey, idx){
   const opts = [
     ['','—'],['0.25','15 min'],['0.5','30 min'],['0.75','45 min'],
@@ -1020,7 +1193,7 @@ function clearRow(empId,periodKey,rowIdx){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row = DB.timesheets[key].rows[rowIdx];
-const recordId = row.airtableRecordId;
+  const recordId = row.airtableRecordId;
   row.start=''; row.end=''; row.lunch=''; row.pause=''; row.notes='';
   save();
   render();
@@ -1034,9 +1207,28 @@ const recordId = row.airtableRecordId;
 function quickFill(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
-  DB.timesheets[key].rows[rowIdx].notes=value;
+  const row = DB.timesheets[key].rows[rowIdx];
+  if(value==='Férié' && row.notes && !row.notes.startsWith('Férié')){
+    toast('Notes déjà remplies pour cette journée.','info'); return;
+  }
+  row.notes = value;
+  if(value==='Congé'||value==='Maladie'){
+    row.start='00:00'; row.end='07:30'; row.lunch='';
+  } else if(value==='Absent'){
+    row.start='00:00'; row.end='00:00'; row.lunch='';
+  } else if(value==='Férié'){
+    const hpMins = getHolidayPay(empId, periodKey);
+    const sources = getHolidayPaySources(empId, periodKey);
+    const srcStr = sources.map(s=>fmtMins(s.mins)).join(' + ');
+    row.notes = `Férié - ${srcStr} × 5% = ${fmtMins(hpMins)}`;
+    row.start='00:00';
+    row.end=minsToHHMM(hpMins);
+    row.lunch='';
+  }
+  const sheet=DB.timesheets[key];
+  sheet.totalMinutes=calcSheetTotal(sheet);
   save();
-  syncFullSheetToAirtable(empId, periodKey); // sync feuille complete vers Airtable
+  syncFullSheetToAirtable(empId, periodKey);
   render();
 }
 
@@ -1048,7 +1240,6 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
   const sheet = DB.timesheets[key]; if(!sheet) return;
   const row = sheet.rows.find(r => r.date === rowDate); if(!row) return;
   row[field] = value;
-  // Mise à jour live du total de la ligne
   const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0,p=parseTime(row.pause)||0;
   const worked=(s!==null&&e!==null)?Math.max(0,e-s-l-p):null;
   const totalEl=document.getElementById(`arch-total-${empId}-${rowDate}`);
@@ -1122,12 +1313,12 @@ function unlockArchiveSheet(empId, periodKey){
   syncApprovalToAirtable(empId,periodKey,false);
   render();
 }
+
 function saveAdminNote(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   DB.timesheets[key].rows[rowIdx].adminNote=value;
   DataService.save(DB);
-  // Sync vers Airtable avec debounce (1.5s)
   const timerKey=`adminnote-${empId}-${rowIdx}`;
   clearTimeout(_adminNoteTimers[timerKey]);
   _adminNoteTimers[timerKey]=setTimeout(()=>{
@@ -1138,7 +1329,6 @@ function saveAdminNote(empId,periodKey,rowIdx,value){
 function copyYesterday(empId,periodKey){
   const key=`${empId}_${periodKey}`;
   const sheet=DB.timesheets[key]; if(!sheet) return;
-  // Utiliser la date locale (pas UTC) pour eviter le decalage de fuseau
   const todayStr=localDateStr();
   const todayIdx=sheet.rows.findIndex(r=>r.date===todayStr);
   if(todayIdx<1){ alert("Impossible de trouver la journée d'hier dans cette période."); return; }
@@ -1155,7 +1345,7 @@ function copyYesterday(empId,periodKey){
   },0);
   sheet.totalMinutes=gt;
   save();
-  syncFullSheetToAirtable(empId, periodKey); // sync vers Airtable apres copie
+  syncFullSheetToAirtable(empId, periodKey);
   render();
 }
 
@@ -1175,7 +1365,6 @@ function renderEmpProfile(){
   const mode=emp.inputMode||'clock';
   content.innerHTML=`
     <div class="card p-5 space-y-5">
-      <!-- Identity -->
       <div class="flex items-center gap-4 pb-4 border-b">
         <div class="w-14 h-14 rounded-full nav-navy flex items-center justify-center text-white font-bold text-xl">
           ${emp.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)}
@@ -1185,13 +1374,11 @@ function renderEmpProfile(){
           <div class="text-sm text-slate-400">${emp.partTime?'Temps partiel':'Temps plein'}</div>
         </div>
       </div>
-      <!-- Contact info (read-only) -->
       <div class="space-y-2 text-sm text-slate-600">
         <div class="flex items-center gap-2"><span class="text-base">📧</span><span>${emp.email||'Non configuré'}</span></div>
         <div class="flex items-center gap-2"><span class="text-base">📱</span><span>${emp.phone||'Non configuré'}</span></div>
         ${!emp.airtableId?'<div class="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1">&#9888; Compte non li&#233; &#224; Airtable &mdash; contactez l\'administrateur</div>':''}
       </div>
-      <!-- Input mode selector -->
       <div class="border-t pt-4">
         <div class="font-semibold text-slate-800 mb-1">📱 Mode de saisie (mobile)</div>
         <p class="text-xs text-slate-400 mb-3">Comment voulez-vous entrer vos heures sur téléphone?</p>
@@ -1208,7 +1395,6 @@ function renderEmpProfile(){
           </button>
         </div>
       </div>
-      <!-- Password -->
       <div class="border-t pt-4">
         <div class="font-semibold text-slate-800 mb-3">🔒 Mot de passe de connexion</div>
         ${hasPw?`
@@ -1247,7 +1433,6 @@ function showToast(msg, type='success'){
   setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),500); },2500);
 }
 
-// Sync les preferences employe vers Airtable (inputMode, autoFill, etc.)
 async function syncEmpPrefsToAirtable(empId){
   const emp=DB.employees.find(e=>e.id===empId); if(!emp||!emp.airtableId) return;
   try{
@@ -1262,7 +1447,6 @@ async function syncEmpPrefsToAirtable(empId){
         partTime:      emp.partTime
       })
     });
-    console.log('Prefs synced to Airtable:', emp.name);
   }catch(e){ console.warn('syncEmpPrefsToAirtable:', e.message); }
 }
 
@@ -1283,7 +1467,7 @@ function setInputMode(mode){
   const dbEmp=DB.employees.find(e=>e.id===emp.id);
   if(dbEmp) dbEmp.inputMode=mode;
   save(); render();
-  syncEmpPrefsToAirtable(emp.id); // persist vers Airtable
+  syncEmpPrefsToAirtable(emp.id);
 }
 
 async function changeEmpPassword(){
@@ -1358,12 +1542,10 @@ function renderAdmin(){
   return wrap;
 }
 
-// ── Overview tab
 function renderOverview(period){
   const frag=document.createDocumentFragment();
 
-  // ── Avertissement: périodes précédentes non approuvées
-  const prevPeriods = PERIOD.list(12).slice(1); // toutes sauf la courante
+  const prevPeriods = PERIOD.list(12).slice(1);
   const unapprovedPrev = [];
   prevPeriods.forEach(p=>{
     sortedEmployees().forEach(emp=>{
@@ -1375,7 +1557,6 @@ function renderOverview(period){
   });
   if(unapprovedPrev.length > 0){
     const warn=el('div','mb-4 bg-red-50 border border-red-200 rounded-xl p-4');
-    // Grouper par période
     const byPeriod={};
     unapprovedPrev.forEach(({emp,period:p})=>{
       const lbl=PERIOD.label(p.start,p.end);
@@ -1443,6 +1624,10 @@ function renderOverview(period){
     const isZero=tot===0;
     const bc=isZero?(emp.partTime?'border-l-4 border-purple-400':'border-l-4 border-red-400'):'border-l-4 border-transparent';
     const card=el('div',`card mb-3 overflow-hidden ${bc}`);
+    const hpCalc = calcHolidayPay(emp.id, period.key);
+    const hpEff  = getHolidayPay(emp.id, period.key);
+    const hpIsOverride = DB.holidayPay[emp.id]?.[period.key] !== undefined;
+    const hpSources = getHolidayPaySources(emp.id, period.key);
     const ch=el('div','px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-slate-50 border-b');
     ch.innerHTML=`
       <div class="flex items-center gap-3">
@@ -1456,6 +1641,24 @@ function renderOverview(period){
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <span class="mono text-sm font-semibold ${isZero?(emp.partTime?'text-purple-600':'text-red-600'):'text-slate-700'}" id="gt-${emp.id}">${fmtMins(tot)}</span>
+        <div class="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 relative group">
+          <span class="text-xs text-amber-700 font-semibold whitespace-nowrap">🎉 Férié</span>
+          <input type="text" id="hp-inp-${emp.id}-${period.key}"
+            class="mono text-xs font-bold text-amber-800 bg-transparent border-none outline-none w-14 text-center"
+            style="border-bottom:1px dashed #d97706;cursor:text"
+            value="${fmtMins(hpEff)}"
+            onchange="setHolidayPay('${emp.id}','${period.key}',this.value)"
+            onblur="setHolidayPay('${emp.id}','${period.key}',this.value)"/>
+          ${hpIsOverride?`<button onclick="delete DB.holidayPay['${emp.id}']['${period.key}'];save();render()" class="text-amber-400 hover:text-amber-600 text-xs" title="Réinitialiser (auto: ${fmtMins(hpCalc)})">↺</button>`:''}
+          <div class="absolute top-full left-0 mt-1 z-50 hidden group-hover:block bg-slate-800 text-white text-xs rounded-lg px-3 py-2 shadow-xl whitespace-nowrap" style="min-width:280px">
+            ${hpSources.map(s=>`<div class="flex justify-between gap-4"><span class="text-slate-300">${s.label}</span><span class="mono font-bold">${fmtMins(s.mins)}</span></div>`).join('')}
+            <div class="border-t border-slate-600 mt-1 pt-1 flex justify-between gap-4">
+              <span class="text-amber-300">Somme × 5% → arrondi 15min</span>
+              <span class="mono font-bold text-amber-300">${fmtMins(hpCalc)}</span>
+            </div>
+            ${hpIsOverride?`<div class="text-amber-400 text-xs mt-1">✏ Valeur modifiée manuellement: ${fmtMins(hpEff)}</div>`:''}
+          </div>
+        </div>
         ${sheet?.approved
           ?`<span class="badge-approved">✓ Approuvé</span><button onclick="unlockSheet('${emp.id}','${period.key}')" class="btn btn-gray text-xs">🔓 Déverrouiller</button>`
           :`<span class="badge-pending">En attente</span><button onclick="approveSheet('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button>`}
@@ -1505,7 +1708,6 @@ async function approveAll(periodKey){
   });
   save(); autoBackup(DB,'approve-all'); render();
   if(toSync.length > 0) toast(`${toSync.length} feuille(s) approuvée(s) ✓`, 'success');
-  // Sync vers Airtable séquentiellement pour éviter le rate limit
   for(const empId of toSync){
     await syncApprovalToAirtable(empId, periodKey, true);
   }
@@ -1517,7 +1719,7 @@ function unlockSheet(empId,periodKey){
   save(); render();
   const empName = DB.employees.find(e=>e.id===empId)?.name||'Employé';
   toast(`${empName} — feuille déverrouillée`, 'info');
-  syncApprovalToAirtable(empId, periodKey, false); // décoche Approuvé dans Airtable
+  syncApprovalToAirtable(empId, periodKey, false);
 }
 
 async function sendReminder(empId) {
@@ -1579,7 +1781,6 @@ async function remindAll(){
   render();
 }
 
-// ── Staff tab
 function renderStaff(){
   const frag=document.createDocumentFragment();
   const hdr=el('div','flex items-center justify-between mb-4');
@@ -1619,7 +1820,6 @@ function renderStaff(){
     frag.appendChild(card);
   });
 
-  // Section employes archives
   const _arch = DB.employees.filter(e=>e.archived).sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
   if(_arch.length > 0){
     const _h=el('div','mt-6 mb-2 flex items-center gap-2');
@@ -1649,7 +1849,6 @@ function resetReminderCount(empId){
   if(emp){emp.reminderCount=0;save();render();}
 }
 
-// ── Templates tab
 function renderTemplates(){
   const frag=document.createDocumentFragment();
   const card=el('div','card p-5 max-w-xl');
@@ -1680,16 +1879,14 @@ function archiveStatusCell(emp, period, sheet){
   return '<button onclick="approveSheet(\''+emp.id+'\',\''+period.key+'\')" class="btn btn-green text-xs">\u2713 Approuver</button>';
 }
 
-// ── Archives tab
 function renderArchives(){
   const frag=document.createDocumentFragment();
   const periods=PERIOD.list(24);
   const allEmps=DB.employees
   .filter(e => state.showArchivedInFilter || !e.archived)
   .sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
-const archivedCount=DB.employees.filter(e=>e.archived).length;
+  const archivedCount=DB.employees.filter(e=>e.archived).length;
 
-  // ── Filtres
   const filters=el('div','card p-4 mb-4 flex flex-wrap gap-3 items-end');
   const loadLbl=state.archivesLoading?'⏳ Chargement…':'🔄 Charger depuis Airtable';
   filters.innerHTML=`
@@ -1717,7 +1914,6 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
   const summaryPeriods=state.archiveFilter.period?[periods.find(p=>p.key===state.archiveFilter.period)]:periods;
   const hasPeriodFilter=!!state.archiveFilter.period;
 
-  // ── Barre d'actions globale (seulement si période filtrée)
   if(hasPeriodFilter){
     const actionBar=el('div','mb-4 flex flex-wrap gap-2');
     actionBar.innerHTML=`
@@ -1725,14 +1921,13 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
     frag.appendChild(actionBar);
   }
 
-  // ── Récapitulatif avec bouton par employé
   const summaryCard=el('div','card p-4 mb-4');
   summaryCard.innerHTML=`
     <h3 class="text-sm font-semibold text-slate-700 mb-2">Récapitulatif</h3>
     <table><thead><tr class="nav-navy">
       <th class="text-left pl-3">Employé</th>
       <th>Total heures</th>
-      ${hasPeriodFilter?'<th>Statut</th><th></th>':''}
+      ${hasPeriodFilter?'<th title="(2 périodes précédentes × 5%), arrondi au 15min supérieur">🎉 Congé férié</th><th>Statut</th><th></th>':''}
     </tr></thead>
     <tbody>${(summaryEmp||[]).filter(Boolean).map(emp=>{
       const tot=(summaryPeriods||[]).filter(Boolean).reduce((s,p)=>{
@@ -1740,10 +1935,32 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
       },0);
       const sheet=hasPeriodFilter?DB.timesheets[`${emp.id}_${state.archiveFilter.period}`]:null;
       const approved=sheet?.approved;
+      const hpKey=state.archiveFilter.period;
+      const hpCalc=hasPeriodFilter?calcHolidayPay(emp.id,hpKey):0;
+      const hpEff=hasPeriodFilter?getHolidayPay(emp.id,hpKey):0;
+      const hpIsOverride=hasPeriodFilter&&DB.holidayPay[emp.id]?.[hpKey]!==undefined;
+      const hpSources=hasPeriodFilter?getHolidayPaySources(emp.id,hpKey):[];
+      const hpTooltip=hpSources.map(s=>`${s.label}: ${fmtMins(s.mins)}`).join(' | ')+(hpSources.length?` → ×5%=${fmtMins(hpCalc)}`:'');
       return `<tr>
         <td class="text-left pl-3">${emp.name}</td>
         <td class="total-cell">${fmtMins(tot)}</td>
         ${hasPeriodFilter?`
+          <td>
+            <div class="flex items-center justify-center gap-1">
+              <div class="text-xs text-slate-400 whitespace-nowrap" title="${hpTooltip}" style="cursor:help">
+                ${hpSources.map(s=>`<span class="mono">${fmtMins(s.mins)}</span>`).join('<span class="text-slate-300 mx-0.5">+</span>')}
+                ${hpSources.length?'<span class="text-slate-300 mx-0.5">→</span>':''}
+              </div>
+              <input type="text" id="hp-arch-inp-${emp.id}"
+                class="mono text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center"
+                style="width:68px"
+                value="${fmtMins(hpEff)}"
+                title="${hpTooltip}"
+                onchange="setHolidayPay('${emp.id}','${hpKey}',this.value)"
+                onblur="setHolidayPay('${emp.id}','${hpKey}',this.value)"/>
+              ${hpIsOverride?`<button onclick="delete DB.holidayPay['${emp.id}']['${hpKey}'];save();render()" class="text-amber-500 hover:text-amber-700 text-xs" title="Réinitialiser (auto: ${fmtMins(hpCalc)})">↺</button>`:'<span class="text-slate-300 text-xs">auto</span>'}
+            </div>
+          </td>
           <td>${approved
             ?'<span class="badge-approved">✓ Approuvé</span>'
             :'<span class="badge-pending">En attente</span>'}
@@ -1756,7 +1973,6 @@ const archivedCount=DB.employees.filter(e=>e.archived).length;
     }).join('')}</tbody></table>`;
   frag.appendChild(summaryCard);
 
-  // ── Tableau détaillé
   const search=state.archiveSearch;
   function hl(text){
     if(!search||!text) return text||'';
@@ -1946,7 +2162,7 @@ function renderPasswordModal(){
       <div><label class="field-label block mb-1">Confirmer</label><input type="password" id="pw-confirm" class="w-full"></div>
       <div id="pw-err" class="text-red-500 text-xs hidden"></div>
     </div>
-<div class="flex justify-end gap-2 mt-4">
+    <div class="flex justify-end gap-2 mt-4">
       <button onclick="state.showPasswordModal=false;render()" class="btn btn-gray">Annuler</button>
       <button onclick="changeAdminPassword()" class="btn btn-navy">Changer</button>
     </div>`;
@@ -2000,10 +2216,9 @@ function addEmployee(){
   DB.employees.push({
     id:'emp'+Date.now(), name, email, phone, partTime,
     reminderCount:0, password:null, autoFill:false, inputMode:'clock',
-    airtableId  // ← Airtable record ID — used by syncRowToAirtable
+    airtableId
   });
   save(); state.showAddEmpModal=false; state.addEmpForm={name:'',email:'',phone:'',partTime:false}; render();
-  // Initialiser les records Airtable pour la période courante si l'employé a un ID Airtable
   if(airtableId) initPeriodAirtable(PERIOD.current().key);
 }
 
@@ -2185,9 +2400,7 @@ async function loadSheetFromAirtable(emp, periodOverride){
     let changed=false;
     atRows.forEach(at=>{
       const lr=sheet.rows.find(r=>r.date===at.date); if(!lr) return;
-      // Cacher l'ID Airtable pour les PATCHs directs futurs
       if(at.airtableRecordId && lr.airtableRecordId!==at.airtableRecordId){lr.airtableRecordId=at.airtableRecordId;changed=true;}
-      // Ne pas écraser une valeur non-vide avec du vide (doublons Airtable incomplets)
       if(at.start     && at.start!==lr.start)    {lr.start=at.start;changed=true;}
       if(at.end       && at.end!==lr.end)        {lr.end=at.end;changed=true;}
       if(at.lunch     && at.lunch!==lr.lunch)    {lr.lunch=at.lunch;changed=true;}
@@ -2204,7 +2417,7 @@ async function loadArchivePeriod(periodKey){
   const period = PERIOD.list(24).find(p => p.key === periodKey);
   if(!period) return;
   if(_archiveLoadedPeriods.has(periodKey)){
-    render(); // ← déjà chargé, juste re-render
+    render();
     return;
   }
   state.archivesLoading = true; render();
@@ -2228,8 +2441,10 @@ async function refreshArchives(){
   state.archivesLoading = false; render();
 }
 
-// Sync toute la feuille d'un employe vers Airtable
-// Envoie chaque ligne avec données séparément pour compatibilité maximale
+// ================================================================
+//  AIRTABLE WRITE — syncFullSheetToAirtable
+//  MODIFICATIONS SYNC QUEUE: syncStart() + SyncQueue.add/remove
+// ================================================================
 async function syncFullSheetToAirtable(eid, pk){
   const emp = DB.employees.find(e => e.id === eid) || currentEmp();
   if(!emp || !emp.airtableId){ console.log('syncFullSheet: pas airtableId pour', eid); return; }
@@ -2238,22 +2453,21 @@ async function syncFullSheetToAirtable(eid, pk){
   _syncLocks.add(sheetKey);
   const sheet = DB.timesheets[sheetKey];
   if(!sheet){ _syncLocks.delete(sheetKey); return; }
-  // Utiliser la période du pk passé, pas forcément la période courante
   const periodForLabel = pk
     ? (PERIOD.list(24).find(p => p.key === pk) || PERIOD.current())
     : PERIOD.current();
   const periodLabel = PERIOD.airtableLabel(periodForLabel.start, periodForLabel.end);
 
-  // Envoyer chaque ligne qui a des données — une requête par ligne
-const rowsWithData = sheet.rows.filter(r => 
-  r.start || r.end || r.notes || r.adminNote
-);
+  const rowsWithData = sheet.rows.filter(r =>
+    r.start || r.end || r.notes || r.adminNote
+  );
   dbg(`Sync: ${emp.name} — ${rowsWithData.length} ligne(s)`);
   dbg(`airtableId: ${emp.airtableId||'VIDE'}`);
   if(!emp.airtableId) dbg('⚠️ airtableId manquant!', 'error');
   console.log(`syncFullSheet: ${emp.name} | ${rowsWithData.length} lignes à sync`);
 
   let idsCached = false;
+  // ── MODIFICATION 1: syncStart() ajouté ici
   syncStart();
   try {
     for(const row of rowsWithData){
@@ -2270,7 +2484,7 @@ const rowsWithData = sheet.rows.filter(r =>
         total:           (()=>{ const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0,p=parseTime(row.pause)||0; return (s!==null&&e!==null)?fmtMins(Math.max(0,e-s-l-p)):''; })(),
         recordId:        row.airtableRecordId || undefined
       };
-      // Enregistrer dans la queue AVANT d'envoyer — retiré si succès
+      // ── MODIFICATION 2: Enregistrer dans la queue avant d'envoyer
       SyncQueue.add(data);
       try{
         const resp = await fetch('/api/syncairtable',{
@@ -2284,11 +2498,25 @@ const rowsWithData = sheet.rows.filter(r =>
             row.airtableRecordId = json.recordId;
             idsCached = true;
           }
+          // Retirer de la queue si succès
           SyncQueue.remove(emp.airtableId, row.date);
+          row._syncStatus = 'ok';
+          updateRowSyncBadge(eid, row.date, 'ok');
           dbg(`✅ ${row.date} → ${json.recordId||'?'}`, 'ok');
           console.log(`  ✅ ${row.date} (${json.recordId})`);
-        } else { const errTxt=await resp.text(); dbg(`❌ ${row.date}: HTTP ${resp.status} ${errTxt}`, 'error'); console.error(`  ❌ ${row.date}:`, resp.status, errTxt); }
-      }catch(e){ dbg(`❌ ${row.date}: ${e.message} — conservé en queue`, 'error'); console.error(`  ❌ ${row.date}:`, e.message); }
+        } else {
+          const errTxt=await resp.text();
+          row._syncStatus = 'error';
+          updateRowSyncBadge(eid, row.date, 'error');
+          dbg(`❌ ${row.date}: HTTP ${resp.status} ${errTxt}`, 'error');
+          console.error(`  ❌ ${row.date}:`, resp.status, errTxt);
+        }
+      }catch(e){
+        row._syncStatus = 'error';
+        updateRowSyncBadge(eid, row.date, 'error');
+        dbg(`❌ ${row.date}: ${e.message} — conservé en queue`, 'error');
+        console.error(`  ❌ ${row.date}:`, e.message);
+      }
     }
     if(idsCached) save();
     updateSyncBadge();
@@ -2298,16 +2526,7 @@ const rowsWithData = sheet.rows.filter(r =>
   }
 }
 
-// ================================================================
-//  AIRTABLE SYNC
-// ================================================================
-
-// Sync une ligne de timesheet vers Airtable.
-// Appelé par liveCalc (avec debounce) et quickFill.
-// empId optionnel — si absent, utilise currentEmp() (vue employé)
-//                   si fourni, permet à l'admin de syncer la feuille d'un autre
 async function syncRowToAirtable(eid, pk, idx){
-  // Trouver l'employé dans DB par son id local
   const emp = DB.employees.find(e => e.id === eid) || currentEmp();
   if(!emp || !emp.airtableId){
     console.log('syncRowToAirtable: pas d\'airtableId pour', eid, '— skip');
@@ -2321,7 +2540,6 @@ async function syncRowToAirtable(eid, pk, idx){
   const row = sheet.rows[idx];
   if(!row) return;
 
-  // Calculer la période de paie pour cette ligne
   const period = PERIOD.current();
   const periodLabel = PERIOD.airtableLabel(period.start, period.end);
 
@@ -2332,7 +2550,7 @@ async function syncRowToAirtable(eid, pk, idx){
     end:            row.end       || '',
     lunch:          row.lunch     || '',
     notes:          row.notes     || '',
-    adminNote:      row.adminNote || '',   // Note privée admin → champ "Note Admin" Airtable
+    adminNote:      row.adminNote || '',
     periodeDePaie:  periodLabel
   };
 
@@ -2344,7 +2562,6 @@ async function syncRowToAirtable(eid, pk, idx){
     });
     if(resp.ok){
       const result = await resp.json();
-      // Sauvegarder le recordId Airtable dans la ligne pour les PATCH directs futurs
       if(result.recordId && row){
         row.airtableRecordId = result.recordId;
         save();
@@ -2359,15 +2576,12 @@ async function syncRowToAirtable(eid, pk, idx){
   }
 }
 
-// Coche "Approuvé" sur toutes les lignes Airtable d'un employé pour une période
-// Appelé par approveSheet() et approveAll()
 async function initPeriodAirtable(periodKey){
   const period = PERIOD.list(24).find(p => p.key === periodKey);
   if(!period) return;
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec ID Airtable.', 'error'); return; }
 
-  // Générer les 14 dates de la période
   const dates = [];
   for(let i = 0; i < 14; i++){
     const d = new Date(period.start);
@@ -2387,7 +2601,6 @@ async function initPeriodAirtable(periodKey){
     });
     const result = await resp.json();
     if(resp.ok){
-      // Sauvegarder les recordIds localement pour que le re-sync utilise PATCH direct
       if(result.records && result.records.length > 0){
         result.records.forEach(({empId, date, recordId}) => {
           const emp = DB.employees.find(e => e.airtableId === empId);
@@ -2412,19 +2625,14 @@ async function resyncAllToAirtable(periodKey){
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec un ID Airtable.', 'error'); return; }
 
-  // Libérer tous les verrous bloqués
   _syncLocks.clear();
 
-  // ÉTAPE 1 : Tirer depuis Airtable vers le local (merge bidirectionnel)
-  // Règle : si Airtable a des données et le local est vide, le local est mis à jour.
-  //         si le local a des données, elles ne sont pas écrasées.
   const period = PERIOD.list(24).find(p => p.key === periodKey) || PERIOD.current();
   toast(`⬇️ Chargement depuis Airtable (${emps.length} employé(s))…`, 'info', 15000);
   for(const emp of emps){
     await loadSheetFromAirtable(emp, period);
   }
 
-  // ÉTAPE 2 : Pousser le résultat fusionné vers Airtable
   toast(`⬆️ Envoi vers Airtable (${emps.length} employé(s))…`, 'info', 15000);
   let done = 0;
   for(const emp of emps){
@@ -2444,12 +2652,10 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   const sheet = DB.timesheets[sheetKey];
   if(!sheet) return;
 
-  // Calculer la période de paie
   const periodStart = new Date(periodKey + 'T00:00:00');
   const periodEnd   = new Date(periodStart); periodEnd.setDate(periodEnd.getDate()+13);
   const periodLabel = PERIOD.airtableLabel(periodStart, periodEnd);
 
-  // On n'envoie que les lignes qui ont au moins une heure saisie
   const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
   const filteredPromises = rowsWithData.map(row => {
     const data = {
@@ -2482,7 +2688,6 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   console.log(`✅ Approval synced to Airtable: ${emp.name} approved=${approved}`);
 }
 
-
 function clearChangeLog(){
   if(!confirm("Effacer tout l'historique des modifications?")) return;
   DB.changeLog=[];
@@ -2490,7 +2695,6 @@ function clearChangeLog(){
   render();
 }
 
-// ── Change Log tab
 function renderChangeLog(){
   const frag = document.createDocumentFragment();
   const log = DB.changeLog || [];
@@ -2554,97 +2758,7 @@ function renderChangeLog(){
 function el(tag,className){ const e=document.createElement(tag); if(className)e.className=className; return e; }
 function logout(){ state.currentUser=null; state.view='login'; state.adminTab='overview'; render(); }
 
-// ================================================================
-//  SYNC QUEUE — retry automatique si réseau coupé (mobile)
-// ================================================================
-const SyncQueue = {
-  KEY: 'fdt_syncqueue_v1',
-  add(data){
-    let q = this.getAll();
-    const idx = q.findIndex(x => x.empId === data.empId && x.date === data.date);
-    if(idx >= 0) q[idx] = { ...data, _ts: Date.now() };
-    else q.push({ ...data, _ts: Date.now() });
-    if(q.length > 200) q = q.slice(-200);
-    try{ localStorage.setItem(this.KEY, JSON.stringify(q)); } catch(e){}
-    updateSyncBadge();
-  },
-  remove(empId, date){
-    const q = this.getAll().filter(x => !(x.empId === empId && x.date === date));
-    try{ localStorage.setItem(this.KEY, JSON.stringify(q)); } catch(e){}
-    updateSyncBadge();
-  },
-  getAll(){
-    try{ return JSON.parse(localStorage.getItem(this.KEY) || '[]'); } catch{ return []; }
-  },
-  size(){ return this.getAll().length; },
-  async flush(){
-    const q = this.getAll();
-    if(q.length === 0) return;
-    console.log(`SyncQueue.flush: ${q.length} entrée(s) en attente`);
-    let flushed = 0;
-    for(const data of q){
-      try{
-        const resp = await fetch('/api/syncairtable', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        if(resp.ok){
-          const json = await resp.json();
-          if(json.recordId){
-            const emp = DB.employees.find(e => e.airtableId === data.empId);
-            if(emp){
-              // Trouver la bonne feuille (toutes les périodes possibles)
-              Object.values(DB.timesheets).forEach(sheet => {
-                const row = sheet?.rows?.find(r => r.date === data.date);
-                if(row && !row.airtableRecordId){
-                  row.airtableRecordId = json.recordId;
-                }
-              });
-              DataService.save(DB);
-            }
-          }
-          this.remove(data.empId, data.date);
-          flushed++;
-          dbg(`✅ Queue flush: ${data.date}`, 'ok');
-        }
-      } catch(e){
-        dbg(`Queue flush erreur ${data.date}: ${e.message}`, 'error');
-      }
-    }
-    if(flushed > 0){
-      toast(`✅ ${flushed} entrée(s) synchronisée(s)`, 'success', 3000);
-    }
-    updateSyncBadge();
-  }
-};
 
-function updateSyncBadge(){
-  const count = SyncQueue.size();
-  let badge = document.getElementById('sync-queue-badge');
-  if(count > 0){
-    if(!badge){
-      badge = document.createElement('div');
-      badge.id = 'sync-queue-badge';
-      badge.style.cssText = 'position:fixed;bottom:70px;left:16px;z-index:30;background:#f59e0b;color:white;'
-        + 'border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;'
-        + 'box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;';
-      badge.title = 'Données en attente de synchronisation';
-      badge.onclick = () => SyncQueue.flush();
-      document.body.appendChild(badge);
-    }
-    badge.textContent = `⏳ ${count} non sync. — Tap pour réessayer`;
-  } else {
-    if(badge) badge.remove();
-  }
-}
-
-// Retry au chargement + toutes les 30s + quand la connexion revient
-window.addEventListener('online', () => {
-  toast('Connexion rétablie — synchronisation en cours…', 'info', 3000);
-  SyncQueue.flush();
-});
-setInterval(() => SyncQueue.flush(), 30_000);
 
 // ================================================================
 //  INIT — charge les employés depuis Airtable au démarrage
@@ -2667,9 +2781,6 @@ async function init(){
     if(resp.ok){
       const apiEmployees = await resp.json();
 
-      // Fusionner les employés Airtable avec le localStorage
-      // - Airtable = source de vérité pour nom, email, téléphone, airtableId, partTime
-      // - localStorage = source de vérité pour password, reminderCount, inputMode, autoFill
       const merged = apiEmployees.map(apiEmp => {
         const local = DB.employees.find(e =>
           e.airtableId === apiEmp.airtableId || e.id === apiEmp.airtableId
@@ -2680,31 +2791,23 @@ async function init(){
           email:         apiEmp.email        || '',
           phone:         apiEmp.phone        || '',
           airtableId:    apiEmp.airtableId,
-          // Airtable = source de verite pour toutes les preferences
           partTime:      apiEmp.partTime      ?? local?.partTime      ?? false,
           inputMode:     apiEmp.inputMode     || local?.inputMode     || 'clock',
           autoFill:      apiEmp.autoFill      ?? local?.autoFill      ?? false,
-          // Si la période courante a déjà été réinitialisée localement, garder 0
-          // (évite de recharger l'ancien compteur d'une période précédente depuis Airtable)
           reminderCount: DB.periodReminderResets[PERIOD.current().key]
             ? (local?.reminderCount ?? 0)
             : (apiEmp.reminderCount ?? local?.reminderCount ?? 0),
-          // Mot de passe: Airtable en priorité, fallback localStorage
           password:      apiEmp.password !== undefined ? apiEmp.password : (local?.password ?? null),
           archived:      apiEmp.archived      ?? local?.archived      ?? false,
-          // Migration timesheets
           _oldId:        local?.id || null,
         };
       });
 
-      // ── Migration des timesheets: renommer les clés de l'ancien ID vers rec...
-      // ex: "emp1_2026-04-06" → "rec1OAp0t7_2026-04-06"
       const newTimesheets = {};
       Object.entries(DB.timesheets || {}).forEach(([key, sheet]) => {
         let newKey = key;
         merged.forEach(emp => {
           if(emp._oldId && emp._oldId !== emp.id) {
-            // Remplacer l'ancien préfixe par le nouveau (rec...)
             const oldPrefix = emp._oldId + '_';
             const newPrefix = emp.id + '_';
             if(key.startsWith(oldPrefix)) {
@@ -2716,7 +2819,6 @@ async function init(){
       });
       DB.timesheets = newTimesheets;
 
-      // Nettoyer le _oldId avant de sauvegarder
       merged.forEach(e => delete e._oldId);
       DB.employees = merged;
       DataService.save(DB);
@@ -2729,7 +2831,7 @@ async function init(){
   }
 
   render();
-  // Retry les syncs en attente au démarrage (ex: mobile qui avait perdu le réseau)
+  // ── MODIFICATION 4: Retry les syncs en attente au démarrage
   SyncQueue.flush();
   setInterval(()=>{
     if(state.view==='employee' && currentEmp()){
