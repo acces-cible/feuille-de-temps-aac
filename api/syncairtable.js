@@ -49,25 +49,13 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // Filtre par date seulement côté Airtable
-    // Utilise >= et <= (plus fiable que = pour les champs Date dans Airtable)
-    const filter = encodeURIComponent(`AND({Date}>='${date}',{Date}<='${date}')`);
-    const searchRes = await axios.get(`${baseUrl}?filterByFormula=${filter}&pageSize=100`, { headers });
-    const allFound = searchRes.data.records;
-    const empRecords = allFound.filter(r => (r.fields['Employé'] || []).includes(empId));
+    const filter = encodeURIComponent(
+      `AND({Date}='${date}', FIND('${empId}', ARRAYJOIN({Employé}, ',')))`
+    );
+    const searchRes = await axios.get(`${baseUrl}?filterByFormula=${filter}`, { headers });
+    const empRecords = searchRes.data.records;
 
-    // LOG DÉTAILLÉ pour debug
-    console.log(`--- FALLBACK SEARCH ${empId} / ${date} ---`);
-    console.log(`  Filtre retourne ${allFound.length} record(s) total`);
-    console.log(`  Après filtre employé: ${empRecords.length} record(s)`);
-    if (allFound.length > 0 && empRecords.length === 0) {
-      // Logs de diagnostic si le filtre employé échoue
-      console.warn(`  ⚠️ empId cherché: "${empId}"`);
-      allFound.slice(0, 3).forEach(r => {
-        const empField = r.fields['Employé'] || [];
-        console.warn(`  Record ${r.id}: Employé=${JSON.stringify(empField)}`);
-      });
-    }
+    console.log(`Trouvé ${empRecords.length} record(s) pour ${empId} / ${date}`);
 
     if (empRecords.length > 1) {
       await Promise.all(empRecords.slice(1).map(r =>
@@ -84,7 +72,9 @@ module.exports = async function handler(req, res) {
 
     const hasContent = (body.start && body.start !== '')
                     || (body.end   && body.end   !== '')
-                    || (body.notes && body.notes !== '');
+                    || (body.notes && body.notes !== '')
+                    || (body.lunch && body.lunch !== '')
+                    || (body.pause && body.pause !== '');
 
     if (hasContent) {
       const fieldsWithEmp = { ...fields, "Employé": [empId] };
