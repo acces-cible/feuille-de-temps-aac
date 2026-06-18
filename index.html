@@ -954,8 +954,8 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     const d=new Date(row.date+'T00:00:00');
     const tr=document.createElement('tr');
     tr.className=isWeekend(d)?'bg-weekend':'bg-day';
-    const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch);
-    const worked=calcWorked(s,e,l);
+    const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch),p=parseTime(row.pause);
+    const worked=calcWorked(s,e,l,p);
     const locked=sheet.approved&&!isAdmin;
     const adminNoteTd=isAdmin
       ?`<td><input type="text" class="time-input" style="width:130px;background:#fef9c3" placeholder="Note privée…" value="${(row.adminNote||'').replace(/"/g,'&quot;')}"
@@ -1552,6 +1552,13 @@ function renderOverview(period){
       const sheet = DB.timesheets[`${emp.id}_${p.key}`];
       if(sheet && !sheet.approved && calcSheetTotal(sheet) > 0){
         unapprovedPrev.push({emp, period:p, sheet});
+        // Revérifier auprès d'Airtable en arrière-plan — le local peut être désynchronisé
+        // (nouvel appareil, cache vidé, nouveau déploiement). loadSheetFromAirtable() met
+        // sheet.approved à jour si Airtable dit que c'est déjà approuvé, et re-render.
+        if(emp.airtableId && !sheet._recheckedApproval){
+          sheet._recheckedApproval = true;
+          loadSheetFromAirtable(emp, p);
+        }
       }
     });
   });
@@ -2407,6 +2414,19 @@ async function loadSheetFromAirtable(emp, periodOverride){
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
     });
+    // Sync du statut Approuvé: si Airtable dit approuvé (au moins une ligne avec données), le local doit suivre.
+    // Évite qu'un appareil resté sur un vieux localStorage permette encore de modifier une feuille déjà approuvée ailleurs.
+    const atApproved = atRows.some(at => at.approved === true);
+    if(atApproved && !sheet.approved){
+      sheet.approved = true;
+      sheet.approvedAt = sheet.approvedAt || new Date().toISOString();
+      changed = true;
+    } else if(!atApproved && sheet.approved){
+      // Un admin a déverrouillé depuis un autre appareil — refléter localement aussi
+      sheet.approved = false;
+      sheet.approvedAt = null;
+      changed = true;
+    }
     sheet.totalMinutes=calcSheetTotal(sheet);
     if(changed){ save(); render(); console.log(`✅ Feuille mise à jour: ${emp.name}`); }
     else{ console.log(`Feuille déjà à jour: ${emp.name}`); }
