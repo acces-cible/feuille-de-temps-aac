@@ -185,6 +185,11 @@ function logChange(empId, date, field, oldVal, newVal){
 }
 
 // ================================================================
+//  VERSION — incrémentée à chaque livraison de index.html
+// ================================================================
+const APP_VERSION = 'v1.5 — 2026-06-17';
+
+// ================================================================
 //  DATA SERVICE
 // ================================================================
 const DataService = {
@@ -673,6 +678,7 @@ function renderLogin(){
     </div>
     <div class="mt-6 border-t pt-4 text-center">
       <button onclick="toggleAdminArea()" class="text-sm text-slate-400 hover:text-slate-600 underline">Accès administrateur</button>
+      <div class="text-xs text-slate-300 mt-1 mono">${APP_VERSION}</div>
     </div>
     <div id="admin-login-area" class="hidden mt-3 space-y-2">
       <input type="password" id="admin-pw" placeholder="Mot de passe admin" class="w-full"
