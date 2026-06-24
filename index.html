@@ -187,7 +187,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.10 — 2026-06-19';
+const APP_VERSION = 'v1.11 — 2026-06-19';
 
 // ================================================================
 //  DATA SERVICE
@@ -866,7 +866,7 @@ function renderEmployee(){
       <button onclick="copyYesterday('${emp.id}','${period.key}')" class="btn btn-blue text-xs" style="padding:5px 12px">Copier hier</button>
     </div>`;
 
-  const content=el('div','max-w-5xl mx-auto px-3 py-4 pb-28');
+  const content=el('div','max-w-7xl mx-auto px-3 py-4 pb-28');
   content.innerHTML=reminderHtml+autoFillHtml;
 
   const deskWrap=el('div','desktop-only card overflow-x-auto');
@@ -906,7 +906,7 @@ function renderEmployee(){
 }
 
 function renderEmpHistory(emp){
-  const content=el('div','max-w-5xl mx-auto px-3 py-4 pb-10');
+  const content=el('div','max-w-7xl mx-auto px-3 py-4 pb-10');
 
   const periods=PERIOD.list(24).slice(1);
   const periodsWithData=periods.filter(p=>{
@@ -1600,7 +1600,7 @@ function renderAdmin(){
     btn.onclick=()=>{state.adminTab=tab;render();};
     tabs.appendChild(btn);
   });
-  const content=el('div','max-w-6xl mx-auto px-2 py-4');
+  const content=el('div','max-w-[1600px] mx-auto px-2 py-4');
   if     (state.adminTab==='overview')  content.appendChild(renderOverview(period));
   else if(state.adminTab==='staff')     content.appendChild(renderStaff());
   else if(state.adminTab==='templates') content.appendChild(renderTemplates());
