@@ -187,7 +187,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.9 — 2026-06-17';
+const APP_VERSION = 'v1.10 — 2026-06-19';
 
 // ================================================================
 //  DATA SERVICE
@@ -2239,7 +2239,7 @@ function openNotesModal(empId, periodKey, rowIdx, currentValue, dayLabelText, fi
   const m=el('div','card p-5 w-full max-w-lg slide-in');
   m.innerHTML=`
     <h2 class="text-lg font-bold mb-1">${isAdminNote?'🔒 Note admin':'📝 Notes'}</h2>
-    <p class="text-sm text-slate-500 mb-3">${dayLabelText||''}${isAdminNote?' — visible seulement par l\\'admin':''}</p>
+    <p class="text-sm text-slate-500 mb-3">${dayLabelText||''}${isAdminNote?" — visible seulement par l'admin":''}</p>
     <textarea id="notes-modal-textarea" rows="8" class="w-full" style="resize:vertical;font-size:16px;${isAdminNote?'background:#fef9c3':''}">${(currentValue||'').replace(/</g,'&lt;')}</textarea>
     <div class="flex justify-end gap-2 mt-4">
       <button onclick="document.getElementById('notes-modal-backdrop').remove()" class="btn btn-gray">Annuler</button>
