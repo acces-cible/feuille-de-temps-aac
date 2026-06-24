@@ -187,7 +187,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.8 — 2026-06-17';
+const APP_VERSION = 'v1.9 — 2026-06-17';
 
 // ================================================================
 //  DATA SERVICE
@@ -999,8 +999,11 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     const worked=calcWorked(s,e,l,p);
     const locked=sheet.approved&&!isAdmin;
     const adminNoteTd=isAdmin
-      ?`<td><input type="text" class="time-input" style="width:130px;background:#fef9c3" placeholder="Note privée…" value="${(row.adminNote||'').replace(/"/g,'&quot;')}"
-          onchange="saveAdminNote('${empId}','${period.key}',${i},this.value)"/></td>`
+      ?`<td><div class="flex items-center gap-1">
+          <input id="adminnote-inp-${empId}-${period.key}-${i}" type="text" class="time-input" style="width:90px;background:#fef9c3" placeholder="Note privée…" value="${(row.adminNote||'').replace(/"/g,'&quot;')}"
+            onchange="saveAdminNote('${empId}','${period.key}',${i},this.value)"/>
+          <button onclick="openNotesModal('${empId}','${period.key}',${i},document.getElementById('adminnote-inp-${empId}-${period.key}-${i}').value,'${dayLabelLong(d).replace(/'/g,"\\'")}','adminNote')" class="btn btn-light" style="padding:2px 6px;font-size:11px" title="Agrandir la note admin">🔍</button>
+        </div></td>`
       :'';
     if(locked){
       tr.innerHTML=`
@@ -2224,30 +2227,37 @@ function renderMergeModal(){
   bd.appendChild(m); return bd;
 }
 
-// Ouvre une modale plein écran pour éditer les notes d'une journée (pratique sur mobile,
-// le champ inline étant trop petit pour relire ou taper un texte plus long).
-function openNotesModal(empId, periodKey, rowIdx, currentValue, dayLabelText){
+// Ouvre une modale plein écran pour éditer un champ texte d'une journée (Notes ou Note admin) —
+// pratique sur mobile/desktop, le champ inline étant trop petit pour relire ou taper un texte plus long.
+function openNotesModal(empId, periodKey, rowIdx, currentValue, dayLabelText, field){
+  field = field || 'notes';
   const existing = document.getElementById('notes-modal-backdrop');
   if(existing) existing.remove();
+  const isAdminNote = field === 'adminNote';
   const bd=el('div','fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4');
   bd.id='notes-modal-backdrop';
   const m=el('div','card p-5 w-full max-w-lg slide-in');
   m.innerHTML=`
-    <h2 class="text-lg font-bold mb-1">📝 Notes</h2>
-    <p class="text-sm text-slate-500 mb-3">${dayLabelText||''}</p>
-    <textarea id="notes-modal-textarea" rows="8" class="w-full" style="resize:vertical;font-size:16px">${(currentValue||'').replace(/</g,'&lt;')}</textarea>
+    <h2 class="text-lg font-bold mb-1">${isAdminNote?'🔒 Note admin':'📝 Notes'}</h2>
+    <p class="text-sm text-slate-500 mb-3">${dayLabelText||''}${isAdminNote?' — visible seulement par l\\'admin':''}</p>
+    <textarea id="notes-modal-textarea" rows="8" class="w-full" style="resize:vertical;font-size:16px;${isAdminNote?'background:#fef9c3':''}">${(currentValue||'').replace(/</g,'&lt;')}</textarea>
     <div class="flex justify-end gap-2 mt-4">
       <button onclick="document.getElementById('notes-modal-backdrop').remove()" class="btn btn-gray">Annuler</button>
-      <button onclick="saveNotesModal('${empId}','${periodKey}',${rowIdx})" class="btn btn-navy">Enregistrer</button>
+      <button onclick="saveNotesModal('${empId}','${periodKey}',${rowIdx},'${field}')" class="btn btn-navy">Enregistrer</button>
     </div>`;
   bd.appendChild(m);
   document.body.appendChild(bd);
   setTimeout(()=>document.getElementById('notes-modal-textarea')?.focus(), 50);
 }
 
-function saveNotesModal(empId, periodKey, rowIdx){
+function saveNotesModal(empId, periodKey, rowIdx, field){
+  field = field || 'notes';
   const val = document.getElementById('notes-modal-textarea').value;
-  liveCalc(empId, periodKey, rowIdx, 'notes', val);
+  if(field === 'adminNote'){
+    saveAdminNote(empId, periodKey, rowIdx, val);
+  } else {
+    liveCalc(empId, periodKey, rowIdx, 'notes', val);
+  }
   document.getElementById('notes-modal-backdrop')?.remove();
   render();
 }
