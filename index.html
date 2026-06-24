@@ -187,7 +187,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.5 — 2026-06-17';
+const APP_VERSION = 'v1.6 — 2026-06-17';
 
 // ================================================================
 //  DATA SERVICE
@@ -455,6 +455,29 @@ function getHolidayPaySources(empId, periodKey){
     const mins = sheet?(sheet.totalMinutes||calcSheetTotal(sheet)):0;
     return {label:PERIOD.label(p.start,p.end), mins};
   });
+}
+
+// Charge en arrière-plan les 2 périodes précédentes (nécessaires au calcul du congé férié)
+// si elles ne sont pas déjà en mémoire. Sans ça, calcHolidayPay() retourne 0 tant que
+// l'admin n'a pas ouvert manuellement l'historique/archives pour ces périodes.
+const _holidaySourcesLoading = new Set();
+async function ensureHolidaySourcesLoaded(empId, periodKey){
+  const emp = DB.employees.find(e=>e.id===empId);
+  if(!emp || !emp.airtableId) return;
+  const allPeriods = PERIOD.list(24);
+  const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+  if(curIdx<0) return;
+  const toLoad = [allPeriods[curIdx+1], allPeriods[curIdx+2]].filter(Boolean);
+  let anyLoaded = false;
+  for(const p of toLoad){
+    const sheetKey = `${empId}_${p.key}`;
+    const loadKey = `${sheetKey}_hp`;
+    if(DB.timesheets[sheetKey] || _holidaySourcesLoading.has(loadKey)) continue;
+    _holidaySourcesLoading.add(loadKey);
+    await loadSheetFromAirtable(emp, p);
+    anyLoaded = true;
+  }
+  if(anyLoaded) render(); // rafraîchir l'affichage une fois les sources chargées
 }
 
 function toTimeVal(str){
@@ -1210,7 +1233,7 @@ function clearRow(empId,periodKey,rowIdx){
   }
 }
 
-function quickFill(empId,periodKey,rowIdx,value){
+async function quickFill(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row = DB.timesheets[key].rows[rowIdx];
@@ -1223,6 +1246,20 @@ function quickFill(empId,periodKey,rowIdx,value){
   } else if(value==='Absent'){
     row.start='00:00'; row.end='00:00'; row.lunch='';
   } else if(value==='Férié'){
+    // S'assurer que les 2 périodes précédentes sont chargées avant de calculer —
+    // sinon le montant serait calculé sur des données manquantes (souvent 0).
+    const allPeriods = PERIOD.list(24);
+    const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+    const toCheck = [allPeriods[curIdx+1], allPeriods[curIdx+2]].filter(Boolean);
+    const emp = DB.employees.find(e=>e.id===empId);
+    if(emp?.airtableId){
+      for(const p of toCheck){
+        if(!DB.timesheets[`${empId}_${p.key}`]){
+          toast('Chargement des données des périodes précédentes…','info',2000);
+          await loadSheetFromAirtable(emp, p);
+        }
+      }
+    }
     const hpMins = getHolidayPay(empId, periodKey);
     const sources = getHolidayPaySources(empId, periodKey);
     const srcStr = sources.map(s=>fmtMins(s.mins)).join(' + ');
@@ -1687,6 +1724,7 @@ function renderOverview(period){
     card.appendChild(ch);
     const s2=getOrCreateSheet(DB,emp.id,period.key,period.start); save();
     if(!s2._synced){ s2._synced=true; loadSheetFromAirtable(emp); }
+    if(!s2._hpChecked){ s2._hpChecked=true; ensureHolidaySourcesLoaded(emp.id, period.key); }
     const sw=el('div','overflow-x-auto p-2');
     const inner=el('div','card overflow-x-auto');
     inner.appendChild(buildDesktopTable(s2,true,emp.id,period));
