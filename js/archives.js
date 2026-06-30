@@ -352,7 +352,7 @@ function renderArchives(){
     <th style="min-width:70px">Date</th>
     <th style="min-width:72px">Début</th><th style="min-width:65px">Dîner</th>
     <th style="min-width:72px">Fin</th><th style="min-width:65px">Pause</th>
-    <th style="min-width:60px">Total</th><th style="min-width:320px">Notes</th>
+    <th style="min-width:60px">Total</th><th style="min-width:680px">Notes</th>
     <th style="min-width:260px">🔒 Note admin</th><th style="min-width:90px">Statut</th>
   </tr></thead>`;
   const tbody=document.createElement('tbody');
@@ -401,17 +401,17 @@ function renderArchives(){
         <td><select class="time-input" style="width:68px"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td style="min-width:320px">
-          <div class="flex items-center gap-1 flex-wrap">
-            <input id="arch-notes-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:100px" placeholder="Notes…" value="${(row.notes||'').replace(/"/g,'&quot;')}"
+        <td style="min-width:680px">
+          <div class="flex items-center gap-1" style="white-space:nowrap">
+            <input id="arch-notes-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:90px" placeholder="Notes…" value="${(row.notes||'').replace(/"/g,'&quot;')}"
               onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/>
-            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-notes-inp-${emp.id}-${row.date}').value,'${dLong}','notes','${row.date}')" class="btn btn-light" style="padding:2px 6px;font-size:11px" title="Agrandir les notes">🔍</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px">Congé</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px">Malad.</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Jour</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Absent')" class="btn" style="padding:2px 6px;font-size:11px;background:#64748b;color:white">Absent</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Férié')" class="btn" style="padding:2px 6px;font-size:11px;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉</button>
-            <button onclick="archiveClearRow('${emp.id}','${period.key}','${row.date}')" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
+            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-notes-inp-${emp.id}-${row.date}').value,'${dLong}','notes','${row.date}')" class="btn btn-light" style="padding:2px 6px;font-size:11px;white-space:nowrap" title="Agrandir les notes">🔍</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px;white-space:nowrap">Congé</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px;white-space:nowrap">Malad.</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px;white-space:nowrap">½ Jour</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Absent')" class="btn" style="padding:2px 6px;font-size:11px;white-space:nowrap;background:#64748b;color:white">Absent</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Férié')" class="btn" style="padding:2px 6px;font-size:11px;white-space:nowrap;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉 Férié</button>
+            <button onclick="archiveClearRow('${emp.id}','${period.key}','${row.date}')" class="btn btn-red" style="padding:2px 6px;font-size:11px;white-space:nowrap" title="Effacer la journée">✕</button>
           </div>
         </td>
         <td style="min-width:220px">
