@@ -764,7 +764,16 @@ async function refreshFromAirtable(){
   const emp=currentEmp(); if(!emp) return;
   const btn=document.querySelector('[data-refresh]');
   if(btn){btn.textContent='⏳';btn.disabled=true;}
-  await loadSheetFromAirtable(emp);
+  let period=null;
+  if(state.empTab==='history' && state.empHistoryPeriod){
+    period=PERIOD.list(24).find(p=>p.key===state.empHistoryPeriod);
+  }
+  try{
+    await loadSheetFromAirtable(emp, period);
+    toast('✅ Données à jour','success',2500);
+  }catch(e){
+    toast('❌ Erreur lors du rafraîchissement','error',3500);
+  }
   if(btn){btn.textContent='🔄';btn.disabled=false;}
 }
 
