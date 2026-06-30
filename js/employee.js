@@ -33,6 +33,7 @@ function renderEmployee(){
       <div class="flex items-center gap-1 bg-white/10 border border-white/20 rounded-lg px-2 py-1" title="${hpTooltip}">
         <span class="text-xs font-semibold whitespace-nowrap">🎉 Férié</span>
         <span class="mono text-xs font-bold">${fmtMins(hpEff)}</span>
+        <button onclick="explainHolidayPay()" class="text-blue-200 hover:text-white text-xs leading-none" title="D'où vient ce calcul?">ℹ️</button>
       </div>
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
       <button data-refresh onclick="refreshFromAirtable()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Rafraîchir depuis Airtable">🔄</button>
