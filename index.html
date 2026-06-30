@@ -835,6 +835,7 @@ function renderEmployee(){
         <span class="mono text-xs font-bold">${fmtMins(hpEff)}</span>
       </div>
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
+      <button data-refresh onclick="refreshFromAirtable()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Rafraîchir depuis Airtable">🔄</button>
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
@@ -1094,8 +1095,7 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   const headerRow=el('div','flex items-center justify-between mb-3');
   const dayDiv=el('div','font-semibold text-slate-700 capitalize');
   dayDiv.textContent=dayLabelLong(d);
-  const totalDiv=el('div','mono font-bold text-blue-900 text-lg');
-  totalDiv.id=`row-t-${empId}-${i}`;
+  totalDiv.id=`m-row-t-${empId}-${i}`;
   totalDiv.textContent=worked!==null?fmtMins(worked):'—';
 
   // Badge statut sync
