@@ -352,7 +352,7 @@ function renderArchives(){
   if(!hasPeriodFilter) colWidths.push(82);              // Période
   colWidths.push(92, 92, 80, 92, 80, 58, 280, 190, 104);
   // Date, Début, Dîner, Fin, Pause, Total, Notes+boutons, Note admin, Statut
-  const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="min-width:${w}px">`).join('')+'</colgroup>';
+  const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
   table.innerHTML=`${colgroupHtml}
   <thead><tr class="nav-navy">
     ${!state.archiveFilter.name?'<th class="text-left pl-3">Employé</th>':''}
