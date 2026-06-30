@@ -91,7 +91,7 @@ function renderMergeModal(){
 
 // Ouvre une modale plein écran pour éditer un champ texte d'une journée (Notes ou Note admin) —
 // pratique sur mobile/desktop, le champ inline étant trop petit pour relire ou taper un texte plus long.
-function openNotesModal(empId, periodKey, rowIdx, currentValue, dayLabelText, field){
+function openNotesModal(empId, periodKey, rowIdx, currentValue, dayLabelText, field, rowDateOverride){
   field = field || 'notes';
   const existing = document.getElementById('notes-modal-backdrop');
   if(existing) existing.remove();
@@ -105,17 +105,20 @@ function openNotesModal(empId, periodKey, rowIdx, currentValue, dayLabelText, fi
     <textarea id="notes-modal-textarea" rows="8" class="w-full" style="resize:vertical;font-size:16px;${isAdminNote?'background:#fef9c3':''}">${(currentValue||'').replace(/</g,'&lt;')}</textarea>
     <div class="flex justify-end gap-2 mt-4">
       <button onclick="document.getElementById('notes-modal-backdrop').remove()" class="btn btn-gray">Annuler</button>
-      <button onclick="saveNotesModal('${empId}','${periodKey}',${rowIdx},'${field}')" class="btn btn-navy">Enregistrer</button>
+      <button onclick="saveNotesModal('${empId}','${periodKey}',${rowIdx===null||rowIdx===undefined?'null':rowIdx},'${field}'${rowDateOverride?`,'${rowDateOverride}'`:''})" class="btn btn-navy">Enregistrer</button>
     </div>`;
   bd.appendChild(m);
   document.body.appendChild(bd);
   setTimeout(()=>document.getElementById('notes-modal-textarea')?.focus(), 50);
 }
 
-function saveNotesModal(empId, periodKey, rowIdx, field){
+function saveNotesModal(empId, periodKey, rowIdx, field, rowDateOverride){
   field = field || 'notes';
   const val = document.getElementById('notes-modal-textarea').value;
-  if(field === 'adminNote'){
+  if(rowDateOverride){
+    // Provient des Archives — édition par date plutôt que par index
+    archiveEditField(empId, periodKey, rowDateOverride, field, val);
+  } else if(field === 'adminNote'){
     saveAdminNote(empId, periodKey, rowIdx, val);
   } else {
     liveCalc(empId, periodKey, rowIdx, 'notes', val);
