@@ -1074,7 +1074,7 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   const emp=DB.employees.find(x=>x.id===empId);
   const useClock=(emp?.inputMode||'clock')==='clock';
 
-  if(approved){
+if(approved){
     card.innerHTML=`
       <div class="px-4 py-3">
         <div class="flex items-center justify-between mb-1">
@@ -1089,15 +1089,13 @@ function buildMobileCard(row,i,approved,empId,periodKey){
       </div>`;
     return card;
   }
-
   const inner=el('div','px-4 pt-4 pb-3');
-
   const headerRow=el('div','flex items-center justify-between mb-3');
   const dayDiv=el('div','font-semibold text-slate-700 capitalize');
   dayDiv.textContent=dayLabelLong(d);
+  const totalDiv=el('div','mono font-bold text-blue-900 text-lg');
   totalDiv.id=`m-row-t-${empId}-${i}`;
   totalDiv.textContent=worked!==null?fmtMins(worked):'—';
-
   // Badge statut sync
   const syncBadge=document.createElement('span');
   syncBadge.id=`row-sync-${empId}-${row.date}`;
@@ -1114,7 +1112,6 @@ function buildMobileCard(row,i,approved,empId,periodKey){
     syncBadge.style.display='inline-block';
   }
   totalDiv.appendChild(syncBadge);
-
   headerRow.appendChild(dayDiv); headerRow.appendChild(totalDiv);
   inner.appendChild(headerRow);
 
