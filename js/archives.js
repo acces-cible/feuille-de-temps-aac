@@ -347,22 +347,21 @@ function renderArchives(){
   const detailCard=el('div','card overflow-x-auto');
   const table=document.createElement('table');
   table.style.tableLayout='fixed';
-  const colEmp = !state.archiveFilter.name ? '<col style="width:120px">' : '';
-  const colPeriod = !hasPeriodFilter ? '<col style="width:78px">' : '';
-  table.innerHTML=`<colgroup>
-    ${colEmp}${colPeriod}
-    <col style="width:62px"><col style="width:60px"><col style="width:55px">
-    <col style="width:60px"><col style="width:55px"><col style="width:50px">
-    <col style="width:450px"><col style="width:190px"><col style="width:90px">
-  </colgroup>
+  const colWidths=[];
+  if(!state.archiveFilter.name) colWidths.push(150);
+  if(!hasPeriodFilter) colWidths.push(80);
+  colWidths.push(85,86,74,86,74,55,380,180,90); // Date,Début,Dîner,Fin,Pause,Total,Notes,NoteAdmin,Statut
+  const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
+  table.style.width=colWidths.reduce((a,b)=>a+b,0)+'px';
+  table.innerHTML=`${colgroupHtml}
   <thead><tr class="nav-navy">
     ${!state.archiveFilter.name?'<th class="text-left pl-3">Employé</th>':''}
     ${!hasPeriodFilter?'<th>Période</th>':''}
     <th>Date</th>
     <th>Début</th><th>Dîner</th>
     <th>Fin</th><th>Pause</th>
-    <th>Total</th><th>Notes</th>
-    <th>🔒 Note admin</th><th>Statut</th>
+    <th>Total</th><th class="text-left pl-2">Notes</th>
+    <th class="text-left pl-2">🔒 Note admin</th><th>Statut</th>
   </tr></thead>`;
   const tbody=document.createElement('tbody');
 
