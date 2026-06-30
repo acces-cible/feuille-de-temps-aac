@@ -80,6 +80,40 @@ function renderOverview(period){
   }
 
   const sheets=sortedEmployees().map(emp=>({emp,sheet:DB.timesheets[`${emp.id}_${period.key}`]}));
+
+  // ── Panneau Exceptions : journées incomplètes (début sans fin ou inversement)
+  // et journées dépassant 10h, détectées sur la période courante.
+  const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
+  const exceptions=[];
+  sheets.forEach(({emp,sheet})=>{
+    if(!sheet) return;
+    sheet.rows.forEach(row=>{
+      const rowDate=new Date(row.date+'T00:00:00');
+      const hasStart=!!row.start, hasEnd=!!row.end;
+      if(rowDate<todayMidnight && ((hasStart&&!hasEnd)||(!hasStart&&hasEnd))){
+        exceptions.push({emp, label:`${dayLabel(rowDate)} — ${hasStart?'début sans fin':'fin sans début'}`, kind:'incomplete'});
+      }
+      const w=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
+      if(w!==null && w>600){
+        exceptions.push({emp, label:`${dayLabel(rowDate)} — ${fmtMins(w)} (plus de 10h)`, kind:'long'});
+      }
+    });
+  });
+  if(exceptions.length>0){
+    const excByEmp={};
+    exceptions.forEach(x=>{ (excByEmp[x.emp.name]=excByEmp[x.emp.name]||[]).push(x.label); });
+    const exc=el('div','mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4');
+    let exHtml='<div class="flex items-start gap-2 mb-2">'
+      +'<span class="text-lg">🔍</span>'
+      +'<div><div class="font-semibold text-amber-800 text-sm">Exceptions à vérifier (période courante)</div>'
+      +'<div class="text-xs text-amber-700 mt-0.5">Journées avec une heure manquante ou un total supérieur à 10h.</div></div></div>';
+    Object.entries(excByEmp).forEach(([name,labels])=>{
+      exHtml+=`<div class="mt-1 text-xs text-amber-800"><span class="font-semibold">${name}:</span> ${labels.join(' · ')}</div>`;
+    });
+    exc.innerHTML=exHtml;
+    frag.appendChild(exc);
+  }
+
   const approvedCount=sheets.filter(s=>s.sheet?.approved).length;
   const total=sheets.length;
   const pct=total>0?Math.round(approvedCount/total*100):0;
@@ -141,8 +175,10 @@ function renderOverview(period){
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <span class="mono text-sm font-semibold ${isZero?(emp.partTime?'text-purple-600':'text-red-600'):'text-slate-700'}" id="gt-${emp.id}">${fmtMins(tot)}</span>
+        <button onclick="refreshEmpFromAdmin('${emp.id}')" class="btn btn-light text-xs" style="padding:3px 6px" title="Rafraîchir depuis Airtable">🔄</button>
         <div class="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 relative group">
           <span class="text-xs text-amber-700 font-semibold whitespace-nowrap">🎉 Férié</span>
+          <button onclick="explainHolidayPay()" class="text-amber-500 hover:text-amber-700 text-xs leading-none" title="D'où vient ce calcul?">ℹ️</button>
           <input type="text" id="hp-inp-${emp.id}-${period.key}"
             class="mono text-xs font-bold text-amber-800 bg-transparent border-none outline-none w-14 text-center"
             style="border-bottom:1px dashed #d97706;cursor:text"
@@ -182,6 +218,13 @@ function renderOverview(period){
     frag.appendChild(card);
   });
   return frag;
+}
+
+async function refreshEmpFromAdmin(empId){
+  const emp=DB.employees.find(e=>e.id===empId); if(!emp) return;
+  toast(`Rafraîchissement de ${emp.name}…`,'info',2000);
+  await loadSheetFromAirtable(emp);
+  toast(`✅ ${emp.name} à jour`,'success',2500);
 }
 
 async function approveSheet(empId,periodKey){
