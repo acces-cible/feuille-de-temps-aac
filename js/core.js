@@ -230,6 +230,7 @@ const PERIOD = {
 };
 
 function fmt(d){ return d.toLocaleDateString('fr-CA',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtShort(d){ const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'); return `${dd}/${mm}/${d.getFullYear()}`; }
 function dayLabel(d){ return d.toLocaleDateString('fr-CA',{weekday:'short',day:'2-digit',month:'short'}); }
 function dayLabelLong(d){ return d.toLocaleDateString('fr-CA',{weekday:'long',day:'numeric',month:'long'}); }
 function isWeekend(d){ const w=d.getDay(); return w===0||w===6; }
