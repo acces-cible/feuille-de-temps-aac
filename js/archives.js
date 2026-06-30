@@ -95,6 +95,54 @@ function saveAdminNote(empId,periodKey,rowIdx,value){
   }, 1500);
 }
 
+async function archiveQuickFill(empId, periodKey, rowDate, value){
+  const key=`${empId}_${periodKey}`;
+  const sheet=DB.timesheets[key]; if(!sheet) return;
+  const row=sheet.rows.find(r=>r.date===rowDate); if(!row) return;
+  if(value==='clear'){
+    if(!confirm('Effacer toutes les données de cette journée?')) return;
+    row.start=''; row.end=''; row.lunch=''; row.pause=''; row.notes='';
+  } else {
+    if(value==='Férié' && row.notes && !row.notes.startsWith('Férié')){
+      toast('Notes déjà remplies pour cette journée.','info'); return;
+    }
+    row.notes = value;
+    if(value==='Congé'||value==='Maladie'){
+      row.start='00:00'; row.end='07:30'; row.lunch='';
+    } else if(value==='Absent'){
+      row.start='00:00'; row.end='00:00'; row.lunch='';
+    } else if(value==='Férié'){
+      const allPeriods = PERIOD.list(24);
+      const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
+      const toCheck = [allPeriods[curIdx+1], allPeriods[curIdx+2]].filter(Boolean);
+      const emp = DB.employees.find(e=>e.id===empId);
+      if(emp?.airtableId){
+        for(const p of toCheck){
+          if(!DB.timesheets[`${empId}_${p.key}`]){
+            toast('Chargement des données des périodes précédentes…','info',2000);
+            await loadSheetFromAirtable(emp, p);
+          }
+        }
+      }
+      const hpMins = getHolidayPay(empId, periodKey);
+      const sources = getHolidayPaySources(empId, periodKey);
+      const srcStr = sources.map(s=>fmtMins(s.mins)).join(' + ');
+      row.notes = `Férié - ${srcStr} × 5% = ${fmtMins(hpMins)}`;
+      row.start='00:00';
+      row.end=minsToHHMM(hpMins);
+      row.lunch='';
+    }
+  }
+  sheet.totalMinutes=calcSheetTotal(sheet);
+  save();
+  syncFullSheetToAirtable(empId, periodKey);
+  render();
+}
+
+function archiveClearRow(empId, periodKey, rowDate){
+  archiveQuickFill(empId, periodKey, rowDate, 'clear');
+}
+
 function copyYesterday(empId,periodKey){
   const key=`${empId}_${periodKey}`;
   const sheet=DB.timesheets[key]; if(!sheet) return;
@@ -246,13 +294,14 @@ function renderArchives(){
     <th style="min-width:70px">Date</th>
     <th style="min-width:72px">Début</th><th style="min-width:65px">Dîner</th>
     <th style="min-width:72px">Fin</th><th style="min-width:65px">Pause</th>
-    <th style="min-width:60px">Total</th><th>Notes</th><th style="min-width:90px">Statut</th>
+    <th style="min-width:60px">Total</th><th style="min-width:320px">Notes</th>
+    <th style="min-width:260px">🔒 Note admin</th><th style="min-width:90px">Statut</th>
   </tr></thead>`;
   const tbody=document.createElement('tbody');
 
   if(rows.length===0){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td colspan="10" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
+    tr.innerHTML='<td colspan="11" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
     tbody.appendChild(tr);
   }
 
@@ -273,10 +322,12 @@ function renderArchives(){
         <td class="mono text-xs">${row.pause||'—'}</td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
         <td class="text-xs" style="max-width:260px;word-break:break-word;white-space:normal">${hl(row.notes)}</td>
+        <td class="text-xs" style="max-width:220px;word-break:break-word;white-space:normal;background:#fef9c3">${row.adminNote||''}</td>
         <td><span class="badge-approved">✓ Approuvé</span></td>`;
     } else {
       const lOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.lunch||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
       const pOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.pause||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
+      const dLong=dayLabelLong(d).replace(/'/g,"\\'");
       tr.innerHTML=`
         ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${emp.name}</td>`:''}
         ${!hasPeriodFilter?`<td class="text-xs">${PERIOD.label(period.start,period.end)}</td>`:''}
@@ -292,9 +343,26 @@ function renderArchives(){
         <td><select class="time-input" style="width:68px"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td style="min-width:140px"><input type="text" class="time-input" style="width:100%;min-width:120px" value="${(row.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…"
-          oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"
-          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/></td>
+        <td style="min-width:320px">
+          <div class="flex items-center gap-1 flex-wrap">
+            <input id="arch-notes-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:100px" placeholder="Notes…" value="${(row.notes||'').replace(/"/g,'&quot;')}"
+              onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/>
+            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-notes-inp-${emp.id}-${row.date}').value,'${dLong}','notes','${row.date}')" class="btn btn-light" style="padding:2px 6px;font-size:11px" title="Agrandir les notes">🔍</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Congé')" class="btn btn-gray" style="padding:2px 6px;font-size:11px">Congé</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Maladie')" class="btn btn-orange" style="padding:2px 6px;font-size:11px">Malad.</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Jour</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Absent')" class="btn" style="padding:2px 6px;font-size:11px;background:#64748b;color:white">Absent</button>
+            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Férié')" class="btn" style="padding:2px 6px;font-size:11px;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉</button>
+            <button onclick="archiveClearRow('${emp.id}','${period.key}','${row.date}')" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
+          </div>
+        </td>
+        <td style="min-width:220px">
+          <div class="flex items-center gap-1">
+            <input id="arch-adminnote-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:160px;background:#fef9c3" placeholder="Note privée…" value="${(row.adminNote||'').replace(/"/g,'&quot;')}"
+              onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','adminNote',this.value)"/>
+            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-adminnote-inp-${emp.id}-${row.date}').value,'${dLong}','adminNote','${row.date}')" class="btn btn-light" style="padding:2px 6px;font-size:11px" title="Agrandir la note admin">🔍</button>
+          </div>
+        </td>
         <td><button onclick="approveArchiveEmployee('${emp.id}','${period.key}')" class="btn btn-green text-xs">✓ Approuver</button></td>`;
     }
     tbody.appendChild(tr);
