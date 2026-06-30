@@ -22,7 +22,6 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
   const timerKey=`arch-${empId}-${rowDate}`;
   clearTimeout(_archiveEditTimers[timerKey]);
   _archiveEditTimers[timerKey]=setTimeout(()=>{
-    // Journaliser tous les champs modifiés pendant cette fenêtre (1.5s), une seule fois par champ
     const prefix=`${empId}_${periodKey}_${rowDate}_`;
     Object.keys(_archiveFieldOriginal).forEach(k=>{
       if(!k.startsWith(prefix)) return;
@@ -186,7 +185,6 @@ function copyYesterday(empId,periodKey){
   render();
 }
 
-
 function archiveStatusCell(emp, period, sheet){
   if(sheet.approved)
     return '<span class="badge-approved">\u2713 Approuv\u00e9</span> <button onclick="unlockSheet(\''+emp.id+'\',\''+period.key+'\')" class="btn btn-gray text-xs">\uD83D\uDD13</button>';
@@ -347,12 +345,14 @@ function renderArchives(){
   const detailCard=el('div','card overflow-x-auto');
   const table=document.createElement('table');
   table.style.tableLayout='fixed';
+  // Pas de table.style.width fixé en px — on laisse la CSS globale table{width:100%} s'appliquer.
+  // Les colgroup donnent des largeurs minimales proportionnelles; le tableau remplit son conteneur.
   const colWidths=[];
-  if(!state.archiveFilter.name) colWidths.push(150);
-  if(!hasPeriodFilter) colWidths.push(80);
-  colWidths.push(85,86,74,86,74,55,380,180,90); // Date,Début,Dîner,Fin,Pause,Total,Notes,NoteAdmin,Statut
-  const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
-  table.style.width=colWidths.reduce((a,b)=>a+b,0)+'px';
+  if(!state.archiveFilter.name) colWidths.push(148);   // Employé
+  if(!hasPeriodFilter) colWidths.push(82);              // Période
+  colWidths.push(92, 92, 80, 92, 80, 58, 280, 190, 104);
+  // Date, Début, Dîner, Fin, Pause, Total, Notes+boutons, Note admin, Statut
+  const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="min-width:${w}px">`).join('')+'</colgroup>';
   table.innerHTML=`${colgroupHtml}
   <thead><tr class="nav-navy">
     ${!state.archiveFilter.name?'<th class="text-left pl-3">Employé</th>':''}
@@ -414,27 +414,47 @@ function renderArchives(){
         <td><select class="time-input" style="width:68px"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td>
-          <div class="flex items-center gap-1" style="white-space:nowrap;overflow-x:auto">
-            <input id="arch-notes-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:64px;padding:3px 4px" placeholder="Notes…" value="${(row.notes||'').replace(/"/g,'&quot;')}"
-              onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/>
-            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-notes-inp-${emp.id}-${row.date}').value,'${dLong}','notes','${row.date}')" class="btn btn-light" style="padding:2px 5px;font-size:10px;white-space:nowrap" title="Agrandir les notes">🔍</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Congé')" class="btn btn-gray" style="padding:2px 5px;font-size:10px;white-space:nowrap">Congé</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Maladie')" class="btn btn-orange" style="padding:2px 5px;font-size:10px;white-space:nowrap">Mal.</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Demi-journée')" class="btn btn-blue" style="padding:2px 5px;font-size:10px;white-space:nowrap">½j</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Absent')" class="btn" style="padding:2px 5px;font-size:10px;white-space:nowrap;background:#64748b;color:white">Abs.</button>
-            <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Férié')" class="btn" style="padding:2px 5px;font-size:10px;white-space:nowrap;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">Férié</button>
-            <button onclick="archiveClearRow('${emp.id}','${period.key}','${row.date}')" class="btn btn-red" style="padding:2px 5px;font-size:10px;white-space:nowrap" title="Effacer la journée">✕</button>
+        <td style="padding:3px 4px">
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:3px">
+              <input id="arch-notes-inp-${emp.id}-${row.date}" type="text" class="time-input"
+                style="flex:1;min-width:50px;padding:3px 4px" placeholder="Notes…"
+                value="${(row.notes||'').replace(/"/g,'&quot;')}"
+                onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/>
+              <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-notes-inp-${emp.id}-${row.date}').value,'${dLong}','notes','${row.date}')"
+                class="btn btn-light" style="padding:2px 6px;font-size:11px;flex-shrink:0" title="Agrandir les notes">🔍</button>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:2px">
+              <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Congé')"
+                class="btn btn-gray" style="padding:2px 6px;font-size:10px">Congé</button>
+              <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Maladie')"
+                class="btn btn-orange" style="padding:2px 6px;font-size:10px">Mal.</button>
+              <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Demi-journée')"
+                class="btn btn-blue" style="padding:2px 6px;font-size:10px">½ jour</button>
+              <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Absent')"
+                class="btn" style="padding:2px 6px;font-size:10px;background:#64748b;color:white">Abs.</button>
+              <button onclick="archiveQuickFill('${emp.id}','${period.key}','${row.date}','Férié')"
+                class="btn" style="padding:2px 6px;font-size:10px;background:#d97706;color:white"
+                title="Remplit avec l&apos;indemnité de congé férié calculée">Férié</button>
+              <button onclick="archiveClearRow('${emp.id}','${period.key}','${row.date}')"
+                class="btn btn-red" style="padding:2px 6px;font-size:10px" title="Effacer la journée">✕</button>
+            </div>
           </div>
         </td>
-        <td>
-          <div class="flex items-center gap-1">
-            <input id="arch-adminnote-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:130px;background:#fef9c3;padding:3px 4px" placeholder="Note privée…" value="${(row.adminNote||'').replace(/"/g,'&quot;')}"
+        <td style="padding:3px 4px">
+          <div style="display:flex;align-items:center;gap:3px">
+            <input id="arch-adminnote-inp-${emp.id}-${row.date}" type="text" class="time-input"
+              style="flex:1;min-width:60px;background:#fef9c3;padding:3px 4px" placeholder="Note privée…"
+              value="${(row.adminNote||'').replace(/"/g,'&quot;')}"
               onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','adminNote',this.value)"/>
-            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-adminnote-inp-${emp.id}-${row.date}').value,'${dLong}','adminNote','${row.date}')" class="btn btn-light" style="padding:2px 5px;font-size:10px" title="Agrandir la note admin">🔍</button>
+            <button onclick="openNotesModal('${emp.id}','${period.key}',null,document.getElementById('arch-adminnote-inp-${emp.id}-${row.date}').value,'${dLong}','adminNote','${row.date}')"
+              class="btn btn-light" style="padding:2px 6px;font-size:11px;flex-shrink:0" title="Agrandir la note admin">🔍</button>
           </div>
         </td>
-        <td><button onclick="approveArchiveEmployee('${emp.id}','${period.key}')" class="btn btn-green text-xs" style="padding:2px 6px;font-size:10px;white-space:nowrap">✓ Approuver</button></td>`;
+        <td style="padding:4px 6px">
+          <button onclick="approveArchiveEmployee('${emp.id}','${period.key}')"
+            class="btn btn-green text-xs" style="padding:3px 8px;font-size:10px;white-space:nowrap">✓ Approuver</button>
+        </td>`;
     }
     tbody.appendChild(tr);
   });
