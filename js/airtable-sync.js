@@ -336,7 +336,7 @@ function renderChangeLog(){
     return frag;
   }
 
-  const fieldLabels = {start:'Début', end:'Fin', lunch:'Dîner', notes:'Notes'};
+  const fieldLabels = {start:'Début', end:'Fin', lunch:'Dîner', pause:'Pause', notes:'Notes', adminNote:'Note admin'};
 
   const table = el('div','card overflow-x-auto');
   const t = document.createElement('table');
