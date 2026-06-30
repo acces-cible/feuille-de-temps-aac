@@ -56,7 +56,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.13 — 2026-06-30';
+const APP_VERSION = 'v1.14 — 2026-06-30';
 
 // ================================================================
 //  DATA SERVICE
@@ -271,6 +271,13 @@ function calcWorked(s,e,l,p){ if(s===null||e===null)return null; const w=e-s-(l|
 // ================================================================
 //  HOLIDAY PAY HELPERS
 // ================================================================
+// Référence officielle (CNESST, art. 62 LNT) : l'indemnité de jour férié équivaut à 1/20 du
+// salaire gagné durant les 4 semaines complètes de paie précédentes — soit, dans cette app,
+// nos 2 dernières périodes de paie (14 jours x 2 = 4 semaines). Comme l'app ne connaît pas le
+// taux horaire, le même ratio 1/20 (5%) est appliqué directement sur les heures travaillées.
+const HOLIDAY_PAY_INFO = "Calcul basé sur la norme du Québec (CNESST, art. 62 de la Loi sur les normes du travail) : l'indemnité de jour férié équivaut à 1/20 du salaire gagné durant les 4 semaines complètes de paie précédentes — soit nos 2 dernières périodes de paie. Comme l'app ne connaît pas le taux horaire de chaque employé, elle applique ce même ratio (5%) directement sur les heures travaillées de ces 2 périodes, puis arrondit au 15 minutes supérieur.\n\nDétails officiels : https://www.cnesst.gouv.qc.ca/fr/conditions-travail/conges/jours-feries/calculer-indemnites-pour-un-jour-ferie";
+function explainHolidayPay(){ alert(HOLIDAY_PAY_INFO); }
+
 function ceilTo15(mins){
   if(!mins||mins<=0) return 0;
   return Math.ceil(mins/15)*15;
@@ -441,6 +448,17 @@ function liveCalc(eid,pk,idx,field,val,shouldLog=false){
 // ================================================================
 function downloadJSON(data,filename){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+}
+function csvEscape(val){
+  const s=(val===null||val===undefined)?'':String(val);
+  if(/[",\n]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+  return s;
+}
+function downloadCSV(rows,filename){
+  // BOM UTF-8 pour qu'Excel affiche correctement les accents français
+  const csv='\uFEFF'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
 }
 function autoBackup(db,reason='backup'){
