@@ -347,12 +347,12 @@ function renderArchives(){
   const detailCard=el('div','card overflow-x-auto');
   const table=document.createElement('table');
   table.innerHTML=`<thead><tr class="nav-navy">
-    ${!state.archiveFilter.name?'<th class="text-left pl-3" style="min-width:110px">Employé</th>':''}
+    ${!state.archiveFilter.name?'<th class="text-left pl-3" style="min-width:170px">Employé</th>':''}
     ${!hasPeriodFilter?'<th style="min-width:100px">Période</th>':''}
     <th style="min-width:70px">Date</th>
     <th style="min-width:72px">Début</th><th style="min-width:65px">Dîner</th>
     <th style="min-width:72px">Fin</th><th style="min-width:65px">Pause</th>
-    <th style="min-width:60px">Total</th><th style="min-width:680px">Notes</th>
+    <th style="min-width:60px">Total</th><th style="min-width:520px">Notes</th>
     <th style="min-width:260px">🔒 Note admin</th><th style="min-width:90px">Statut</th>
   </tr></thead>`;
   const tbody=document.createElement('tbody');
@@ -371,8 +371,8 @@ function renderArchives(){
 
     if(sheet.approved){
       tr.innerHTML=`
-        ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${emp.name}</td>`:''}
-        ${!hasPeriodFilter?`<td class="text-xs">${PERIOD.label(period.start,period.end)}</td>`:''}
+        ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium" style="white-space:nowrap">${emp.name}</td>`:''}
+        ${!hasPeriodFilter?`<td class="text-xs whitespace-nowrap">${fmtShort(period.start)} – ${fmtShort(period.end)}</td>`:''}
         <td class="text-xs mono whitespace-nowrap">${dayLabel(d)}</td>
         <td class="mono text-xs">${row.start||'—'}</td>
         <td class="mono text-xs">${row.lunch||'—'}</td>
@@ -387,8 +387,8 @@ function renderArchives(){
       const pOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.pause||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
       const dLong=dayLabelLong(d).replace(/'/g,"\\'");
       tr.innerHTML=`
-        ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${emp.name}</td>`:''}
-        ${!hasPeriodFilter?`<td class="text-xs">${PERIOD.label(period.start,period.end)}</td>`:''}
+        ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium" style="white-space:nowrap">${emp.name}</td>`:''}
+        ${!hasPeriodFilter?`<td class="text-xs whitespace-nowrap">${fmtShort(period.start)} – ${fmtShort(period.end)}</td>`:''}
         <td class="text-xs mono whitespace-nowrap">${dayLabel(d)}</td>
         <td><input type="text" class="time-input" value="${row.start||''}" placeholder="—"
           oninput="archiveEditField('${emp.id}','${period.key}','${row.date}','start',this.value)"
@@ -401,7 +401,7 @@ function renderArchives(){
         <td><select class="time-input" style="width:68px"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','pause',this.value)">${pOpts}</select></td>
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
-        <td style="min-width:680px">
+        <td style="min-width:520px">
           <div class="flex items-center gap-1" style="white-space:nowrap">
             <input id="arch-notes-inp-${emp.id}-${row.date}" type="text" class="time-input" style="width:90px" placeholder="Notes…" value="${(row.notes||'').replace(/"/g,'&quot;')}"
               onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','notes',this.value)"/>
