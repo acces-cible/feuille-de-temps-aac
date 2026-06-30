@@ -2,12 +2,16 @@
 //  ARCHIVE ROW ACTIONS (édition par date, depuis l'onglet Archives admin)
 // ================================================================
 const _adminNoteTimers = {};
+const _adminNoteOriginal = {};
 const _archiveEditTimers = {};
+const _archiveFieldOriginal = {};
 
 function archiveEditField(empId, periodKey, rowDate, field, value){
   const key = `${empId}_${periodKey}`;
   const sheet = DB.timesheets[key]; if(!sheet) return;
   const row = sheet.rows.find(r => r.date === rowDate); if(!row) return;
+  const origKey = `${empId}_${periodKey}_${rowDate}_${field}`;
+  if(_archiveFieldOriginal[origKey] === undefined) _archiveFieldOriginal[origKey] = row[field] || '';
   row[field] = value;
   const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch)||0,p=parseTime(row.pause)||0;
   const worked=(s!==null&&e!==null)?Math.max(0,e-s-l-p):null;
@@ -18,6 +22,17 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
   const timerKey=`arch-${empId}-${rowDate}`;
   clearTimeout(_archiveEditTimers[timerKey]);
   _archiveEditTimers[timerKey]=setTimeout(()=>{
+    // Journaliser tous les champs modifiés pendant cette fenêtre (1.5s), une seule fois par champ
+    const prefix=`${empId}_${periodKey}_${rowDate}_`;
+    Object.keys(_archiveFieldOriginal).forEach(k=>{
+      if(!k.startsWith(prefix)) return;
+      const f=k.slice(prefix.length);
+      const orig=_archiveFieldOriginal[k];
+      const cur=row[f] || '';
+      if(orig !== cur) logChange(empId, rowDate, f, orig, cur);
+      delete _archiveFieldOriginal[k];
+    });
+    save();
     const emp=DB.employees.find(e=>e.id===empId); if(!emp?.airtableId) return;
     const period=PERIOD.list(24).find(p=>p.key===periodKey); if(!period) return;
     const periodLabel=PERIOD.airtableLabel(period.start,period.end);
@@ -86,11 +101,16 @@ function unlockArchiveSheet(empId, periodKey){
 function saveAdminNote(empId,periodKey,rowIdx,value){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
-  DB.timesheets[key].rows[rowIdx].adminNote=value;
-  DataService.save(DB);
+  const row=DB.timesheets[key].rows[rowIdx];
   const timerKey=`adminnote-${empId}-${rowIdx}`;
+  if(_adminNoteOriginal[timerKey] === undefined) _adminNoteOriginal[timerKey] = row.adminNote || '';
+  row.adminNote=value;
+  DataService.save(DB);
   clearTimeout(_adminNoteTimers[timerKey]);
   _adminNoteTimers[timerKey]=setTimeout(()=>{
+    const orig=_adminNoteOriginal[timerKey];
+    if(orig !== (row.adminNote||'')) logChange(empId, row.date, 'adminNote', orig, row.adminNote||'');
+    delete _adminNoteOriginal[timerKey];
     syncFullSheetToAirtable(empId, periodKey);
   }, 1500);
 }
@@ -171,6 +191,44 @@ function archiveStatusCell(emp, period, sheet){
   if(sheet.approved)
     return '<span class="badge-approved">\u2713 Approuv\u00e9</span> <button onclick="unlockSheet(\''+emp.id+'\',\''+period.key+'\')" class="btn btn-gray text-xs">\uD83D\uDD13</button>';
   return '<button onclick="approveSheet(\''+emp.id+'\',\''+period.key+'\')" class="btn btn-green text-xs">\u2713 Approuver</button>';
+}
+
+function exportFiltered(){
+  const periods=PERIOD.list(24);
+  const allEmps=DB.employees.filter(e => state.showArchivedInFilter || !e.archived);
+  const summaryEmp=state.archiveFilter.name?[DB.employees.find(e=>e.id===state.archiveFilter.name)]:allEmps;
+  const summaryPeriods=state.archiveFilter.period?[periods.find(p=>p.key===state.archiveFilter.period)]:periods;
+  const search=state.archiveSearch;
+
+  const csvRows=[['Employé','Période','Date','Début','Dîner','Fin','Pause','Total','Notes','Note admin','Statut']];
+  (summaryPeriods||[]).filter(Boolean).forEach(p=>{
+    (summaryEmp||[]).filter(Boolean).forEach(emp=>{
+      const k=`${emp.id}_${p.key}`, sheet=DB.timesheets[k]; if(!sheet) return;
+      sheet.rows.forEach(row=>{
+        if(search&&(!row.notes||!row.notes.toLowerCase().includes(search.toLowerCase()))) return;
+        const w=calcWorked(parseTime(row.start),parseTime(row.end),parseTime(row.lunch),parseTime(row.pause));
+        csvRows.push([
+          emp.name,
+          PERIOD.label(p.start,p.end),
+          row.date,
+          row.start||'',
+          row.lunch||'',
+          row.end||'',
+          row.pause||'',
+          w!==null?fmtMins(w):'',
+          row.notes||'',
+          row.adminNote||'',
+          sheet.approved?'Approuvé':'En attente'
+        ]);
+      });
+    });
+  });
+
+  if(csvRows.length===1){ toast('Aucune donnée à exporter avec ces filtres.','info'); return; }
+
+  const ts=new Date().toISOString().slice(0,10);
+  downloadCSV(csvRows, `archives_export_${ts}.csv`);
+  toast(`✅ ${csvRows.length-1} ligne(s) exportée(s) en CSV`,'success');
 }
 
 function renderArchives(){
