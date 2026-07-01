@@ -33,7 +33,7 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
     });
     save();
     const emp=DB.employees.find(e=>e.id===empId); if(!emp?.airtableId) return;
-    const period=PERIOD.list(24).find(p=>p.key===periodKey); if(!period) return;
+    const period=PERIOD.list(12).find(p=>p.key===periodKey); if(!period) return;
     const periodLabel=PERIOD.airtableLabel(period.start,period.end);
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({empId:emp.airtableId,date:rowDate,start:row.start||'',end:row.end||'',
@@ -48,7 +48,7 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
 async function approveArchiveEmployee(empId, periodKey){
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]){
-    const period=PERIOD.list(24).find(p=>p.key===periodKey);
+    const period=PERIOD.list(12).find(p=>p.key===periodKey);
     if(period) getOrCreateSheet(DB,empId,periodKey,period.start); else return;
   }
   DB.timesheets[key].approved=true;
@@ -63,8 +63,8 @@ async function approveArchiveEmployee(empId, periodKey){
 
 async function approveAllArchiveVisible(){
   const summaryPeriods=state.archiveFilter.period
-    ?[PERIOD.list(24).find(p=>p.key===state.archiveFilter.period)].filter(Boolean)
-    :PERIOD.list(24);
+    ?[PERIOD.list(12).find(p=>p.key===state.archiveFilter.period)].filter(Boolean)
+    :PERIOD.list(12);
   const summaryEmps=state.archiveFilter.name
     ?[DB.employees.find(e=>e.id===state.archiveFilter.name)].filter(Boolean)
     :DB.employees.filter(e=>!e.archived);
@@ -131,7 +131,7 @@ async function archiveQuickFill(empId, periodKey, rowDate, value){
     } else if(value==='Absent'){
       row.start='00:00'; row.end='00:00'; row.lunch='';
     } else if(value==='Férié'){
-      const allPeriods = PERIOD.list(24);
+      const allPeriods = PERIOD.list(12);
       const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
       const toCheck = [allPeriods[curIdx+1], allPeriods[curIdx+2]].filter(Boolean);
       const emp = DB.employees.find(e=>e.id===empId);
@@ -192,7 +192,7 @@ function archiveStatusCell(emp, period, sheet){
 }
 
 function exportFiltered(){
-  const periods=PERIOD.list(24);
+  const periods=PERIOD.list(12);
   const allEmps=DB.employees.filter(e => state.showArchivedInFilter || !e.archived);
   const summaryEmp=state.archiveFilter.name?[DB.employees.find(e=>e.id===state.archiveFilter.name)]:allEmps;
   const summaryPeriods=state.archiveFilter.period?[periods.find(p=>p.key===state.archiveFilter.period)]:periods;
@@ -231,7 +231,7 @@ function exportFiltered(){
 
 function renderArchives(){
   const frag=document.createDocumentFragment();
-  const periods=PERIOD.list(24);
+  const periods=PERIOD.list(12);
   const allEmps=DB.employees
   .filter(e => state.showArchivedInFilter || !e.archived)
   .sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
