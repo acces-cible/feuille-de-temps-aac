@@ -110,7 +110,7 @@ function renderEmployee(){
 function renderEmpHistory(emp){
   const content=el('div','max-w-7xl mx-auto px-3 py-4 pb-10');
 
-  const periods=PERIOD.list(24).slice(1);
+  const periods=PERIOD.list(12).slice(1);
   const periodsWithData=periods.filter(p=>{
     const sheet=DB.timesheets[`${emp.id}_${p.key}`];
     return sheet && (calcSheetTotal(sheet)>0 || sheet.approved);
@@ -275,7 +275,7 @@ function buildMobileCard(row,i,approved,empId,periodKey){
   const emp=DB.employees.find(x=>x.id===empId);
   const useClock=(emp?.inputMode||'clock')==='clock';
 
-if(approved){
+  if(approved){
     card.innerHTML=`
       <div class="px-4 py-3">
         <div class="flex items-center justify-between mb-1">
@@ -297,11 +297,9 @@ if(approved){
   const totalDiv=el('div','mono font-bold text-blue-900 text-lg');
   totalDiv.id=`m-row-t-${empId}-${i}`;
   totalDiv.textContent=worked!==null?fmtMins(worked):'—';
-  // Badge statut sync
   const syncBadge=document.createElement('span');
   syncBadge.id=`row-sync-${empId}-${row.date}`;
   syncBadge.style.cssText='font-size:10px;font-weight:600;color:white;border-radius:10px;padding:2px 8px;margin-left:6px;display:none;cursor:default;';
-  // Déterminer le statut initial
   const _queuedNow = SyncQueue.getAll().some(x => x.empId === (DB.employees.find(e=>e.id===empId)?.airtableId) && x.date === row.date);
   if(_queuedNow){
     syncBadge.style.background='#f59e0b'; syncBadge.textContent='⏳ En attente';
@@ -469,13 +467,16 @@ async function quickFill(empId,periodKey,rowIdx,value){
   } else if(value==='Absent'){
     row.start='00:00'; row.end='00:00'; row.lunch='';
   } else if(value==='Férié'){
-    const allPeriods = PERIOD.list(24);
+    const allPeriods = PERIOD.list(12);
     const curIdx = allPeriods.findIndex(p=>p.key===periodKey);
     const toCheck = [allPeriods[curIdx+1], allPeriods[curIdx+2]].filter(Boolean);
     const emp = DB.employees.find(e=>e.id===empId);
     if(emp?.airtableId){
       for(const p of toCheck){
-        if(!DB.timesheets[`${empId}_${p.key}`]){
+        const existing = DB.timesheets[`${empId}_${p.key}`];
+        // ← FIX: recharger si la feuille n'existe pas OU si elle est vide (0 minutes)
+        // Évite d'utiliser un cache vide créé lors d'une session précédente
+        if(!existing || calcSheetTotal(existing) === 0){
           toast('Chargement des données des périodes précédentes…','info',2000);
           await loadSheetFromAirtable(emp, p);
         }
@@ -495,7 +496,6 @@ async function quickFill(empId,periodKey,rowIdx,value){
   syncFullSheetToAirtable(empId, periodKey);
   render();
 }
-
 
 // ================================================================
 //  EMPLOYEE PROFILE
