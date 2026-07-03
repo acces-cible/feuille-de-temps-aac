@@ -56,7 +56,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.14 — 2026-06-30';
+const APP_VERSION = 'v1.15 — 3-07-2026';
 
 // ================================================================
 //  DATA SERVICE
@@ -407,6 +407,12 @@ function liveCalc(eid,pk,idx,field,val,shouldLog=false){
   sheet.totalMinutes=gt;
   const gu=document.getElementById('gt-user');   if(gu) gu.textContent=fmtMins(gt);
   const ga=document.getElementById(`gt-${eid}`); if(ga) ga.textContent=fmtMins(gt);
+  const week1=sheet.rows.slice(0,7).reduce((s,r)=>{const rs=parseTime(r.start),re=parseTime(r.end),rl=parseTime(r.lunch)||0,rp=parseTime(r.pause)||0;if(rs!==null&&re!==null){const d=re-rs-rl-rp;return s+(d<0?0:d);}return s;},0);
+  const week2=sheet.rows.slice(7,14).reduce((s,r)=>{const rs=parseTime(r.start),re=parseTime(r.end),rl=parseTime(r.lunch)||0,rp=parseTime(r.pause)||0;if(rs!==null&&re!==null){const d=re-rs-rl-rp;return s+(d<0?0:d);}return s;},0);
+  const wt1d=document.getElementById(`week-t-${eid}-1`);   if(wt1d) wt1d.textContent=fmtMins(week1);
+  const wt2d=document.getElementById(`week-t-${eid}-2`);   if(wt2d) wt2d.textContent=fmtMins(week2);
+  const wt1m=document.getElementById(`m-week-t-${eid}-1`); if(wt1m) wt1m.textContent=fmtMins(week1);
+  const wt2m=document.getElementById(`m-week-t-${eid}-2`); if(wt2m) wt2m.textContent=fmtMins(week2);
   DataService.save(DB);
 
   // Mettre en queue immédiatement (avant le debounce)
