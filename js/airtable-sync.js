@@ -22,6 +22,7 @@ async function loadSheetFromAirtable(emp, periodOverride){
       if(at.start     && at.start!==lr.start)    {lr.start=at.start;changed=true;}
       if(at.end       && at.end!==lr.end)        {lr.end=at.end;changed=true;}
       if(at.lunch     && at.lunch!==lr.lunch)    {lr.lunch=at.lunch;changed=true;}
+      if(at.pause     && at.pause!==lr.pause)    {lr.pause=at.pause;changed=true;}  // ← FIX #1
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
     });
@@ -42,7 +43,7 @@ async function loadSheetFromAirtable(emp, periodOverride){
 }
 
 async function loadArchivePeriod(periodKey){
-  const period = PERIOD.list(24).find(p => p.key === periodKey);
+  const period = PERIOD.list(12).find(p => p.key === periodKey);
   if(!period) return;
   if(_archiveLoadedPeriods.has(periodKey)){
     render();
@@ -57,8 +58,8 @@ async function loadArchivePeriod(periodKey){
 async function refreshArchives(){
   const filterPeriod = state.archiveFilter.period;
   const periods = filterPeriod
-    ? [PERIOD.list(24).find(p => p.key === filterPeriod)].filter(Boolean)
-    : PERIOD.list(24).slice(1, 4);
+    ? [PERIOD.list(12).find(p => p.key === filterPeriod)].filter(Boolean)
+    : PERIOD.list(12).slice(1, 4);
   const filterEmp = state.archiveFilter.name;
   const emps = filterEmp ? [DB.employees.find(e => e.id === filterEmp)].filter(Boolean) : DB.employees;
   state.archivesLoading = true; render();
@@ -81,12 +82,12 @@ async function syncFullSheetToAirtable(eid, pk){
   const sheet = DB.timesheets[sheetKey];
   if(!sheet){ _syncLocks.delete(sheetKey); return; }
   const periodForLabel = pk
-    ? (PERIOD.list(24).find(p => p.key === pk) || PERIOD.current())
+    ? (PERIOD.list(12).find(p => p.key === pk) || PERIOD.current())
     : PERIOD.current();
   const periodLabel = PERIOD.airtableLabel(periodForLabel.start, periodForLabel.end);
 
   const rowsWithData = sheet.rows.filter(r =>
-    r.start || r.end || r.notes || r.adminNote
+    r.start || r.end || r.notes || r.adminNote || r.pause
   );
   dbg(`Sync: ${emp.name} — ${rowsWithData.length} ligne(s)`);
   dbg(`airtableId: ${emp.airtableId||'VIDE'}`);
@@ -173,6 +174,7 @@ async function syncRowToAirtable(eid, pk, idx){
     start:          row.start     || '',
     end:            row.end       || '',
     lunch:          row.lunch     || '',
+    pause:          row.pause     || '',   // ← FIX #2
     notes:          row.notes     || '',
     adminNote:      row.adminNote || '',
     periodeDePaie:  periodLabel
@@ -201,7 +203,7 @@ async function syncRowToAirtable(eid, pk, idx){
 }
 
 async function initPeriodAirtable(periodKey){
-  const period = PERIOD.list(24).find(p => p.key === periodKey);
+  const period = PERIOD.list(12).find(p => p.key === periodKey);
   if(!period) return;
   const emps = DB.employees.filter(e => e.airtableId && !e.archived);
   if(emps.length === 0){ toast('Aucun employé avec ID Airtable.', 'error'); return; }
@@ -251,7 +253,7 @@ async function resyncAllToAirtable(periodKey){
 
   _syncLocks.clear();
 
-  const period = PERIOD.list(24).find(p => p.key === periodKey) || PERIOD.current();
+  const period = PERIOD.list(12).find(p => p.key === periodKey) || PERIOD.current();
   toast(`⬇️ Chargement depuis Airtable (${emps.length} employé(s))…`, 'info', 15000);
   for(const emp of emps){
     await loadSheetFromAirtable(emp, period);
@@ -280,7 +282,7 @@ async function syncApprovalToAirtable(empId, periodKey, approved){
   const periodEnd   = new Date(periodStart); periodEnd.setDate(periodEnd.getDate()+13);
   const periodLabel = PERIOD.airtableLabel(periodStart, periodEnd);
 
-  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote);
+  const rowsWithData = sheet.rows.filter(r => r.start || r.end || r.notes || r.adminNote || r.pause);
   const filteredPromises = rowsWithData.map(row => {
     const data = {
       empId:         emp.airtableId,
