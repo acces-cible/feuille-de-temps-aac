@@ -86,7 +86,7 @@ function renderEmployee(){
       const subCard = el('div','mx-1 mb-1 px-4 py-2 rounded-xl flex items-center justify-between');
       subCard.style.cssText='background:#f1f5f9;border:2px solid #cbd5e1;';
       subCard.innerHTML=`<span style="font-size:12px;font-weight:600;color:#475569">Sous-total semaine ${weekNum}</span>
-        <span style="font-size:15px;font-weight:700;color:#1e3a5f;font-family:monospace">${fmtMins(weekTotal)}</span>`;
+        <span style="font-size:15px;font-weight:700;color:#1e3a5f;font-family:monospace" id="m-week-t-${emp.id}-${weekNum}">${fmtMins(weekTotal)}</span>`;
       mobWrap.appendChild(subCard);
     }
   });
@@ -257,7 +257,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
       subTr.className = 'subtotal-row';
       subTr.innerHTML = `
         <td class="text-left pl-3" colspan="4">Sous-total semaine ${weekNum}</td>
-        <td class="total-cell">${fmtMins(weekTotal)}</td>
+        <td class="total-cell" id="week-t-${empId}-${weekNum}">${fmtMins(weekTotal)}</td>
         <td colspan="${1 + adminCols}"></td>`;
       tbody.appendChild(subTr);
     }
