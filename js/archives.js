@@ -18,6 +18,9 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
   const totalEl=document.getElementById(`arch-total-${empId}-${rowDate}`);
   if(totalEl) totalEl.textContent=worked!==null?fmtMins(worked):'—';
   sheet.totalMinutes=calcSheetTotal(sheet);
+  // Mettre à jour le total du récapitulatif en temps réel (sans attendre render())
+  const sumEl=document.getElementById(`arch-sum-${empId}`);
+  if(sumEl) sumEl.textContent=fmtMins(sheet.totalMinutes);
   save();
   const timerKey=`arch-${empId}-${rowDate}`;
   clearTimeout(_archiveEditTimers[timerKey]);
@@ -229,6 +232,23 @@ function exportFiltered(){
   toast(`✅ ${csvRows.length-1} ligne(s) exportée(s) en CSV`,'success');
 }
 
+function recalcArchiveTotals(){
+  // Recalcule tous les totalMinutes en mémoire et met à jour les cellules du récapitulatif
+  const periods=PERIOD.list(12);
+  DB.employees.forEach(emp=>{
+    periods.forEach(p=>{
+      const key=`${emp.id}_${p.key}`;
+      const sheet=DB.timesheets[key]; if(!sheet) return;
+      sheet.totalMinutes=calcSheetTotal(sheet);
+      const sumEl=document.getElementById(`arch-sum-${emp.id}`);
+      if(sumEl) sumEl.textContent=fmtMins(sheet.totalMinutes);
+    });
+  });
+  save();
+  render();
+  toast('✅ Totaux recalculés','success',2000);
+}
+
 function renderArchives(){
   const frag=document.createDocumentFragment();
   const periods=PERIOD.list(12);
@@ -273,7 +293,10 @@ function renderArchives(){
 
   const summaryCard=el('div','card p-4 mb-4');
   summaryCard.innerHTML=`
-    <h3 class="text-sm font-semibold text-slate-700 mb-2">Récapitulatif</h3>
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-slate-700">Récapitulatif</h3>
+      <button onclick="recalcArchiveTotals()" class="btn btn-light text-xs" style="padding:2px 8px" title="Recalculer tous les totaux">🔄 Recalculer</button>
+    </div>
     <table><thead><tr class="nav-navy">
       <th class="text-left pl-3">Employé</th>
       <th>Total heures</th>
@@ -293,7 +316,7 @@ function renderArchives(){
       const hpTooltip=hpSources.map(s=>`${s.label}: ${fmtMins(s.mins)}`).join(' | ')+(hpSources.length?` → ×5%=${fmtMins(hpCalc)}`:'');
       return `<tr>
         <td class="text-left pl-3">${emp.name}</td>
-        <td class="total-cell">${fmtMins(tot)}</td>
+        <td class="total-cell" id="arch-sum-${emp.id}">${fmtMins(tot)}</td>
         ${hasPeriodFilter?`
           <td>
             <div class="flex items-center justify-center gap-1">
