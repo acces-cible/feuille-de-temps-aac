@@ -41,6 +41,7 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({empId:emp.airtableId,date:rowDate,start:row.start||'',end:row.end||'',
         lunch:row.lunch||'',pause:row.pause||'',notes:row.notes||'',adminNote:row.adminNote||'',
+        total:(()=>{const s2=parseTime(row.start),e2=parseTime(row.end),l2=parseTime(row.lunch)||0,p2=parseTime(row.pause)||0;return (s2!==null&&e2!==null)?fmtMins(Math.max(0,e2-s2-l2-p2)):'';})(),
         periodeDePaie:periodLabel,recordId:row.airtableRecordId||undefined})
     }).then(async r=>{
       if(r.ok){const j=await r.json();if(j.recordId){row.airtableRecordId=j.recordId;save();}}
