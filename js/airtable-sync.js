@@ -15,26 +15,33 @@ async function loadSheetFromAirtable(emp, periodOverride){
     console.log(`getTimesheet retourne ${atRows.length} ligne(s) pour ${emp.name}`);
     if(!atRows.length){ console.log('Aucune ligne Airtable — localStorage conservé'); return; }
     const sheet=getOrCreateSheet(DB,emp.id,period.key,period.start);
+    const isApproved = sheet.approved; // ← feuille verrouillée = on ne touche pas aux données
     let changed=false;
     atRows.forEach(at=>{
       const lr=sheet.rows.find(r=>r.date===at.date); if(!lr) return;
+      // Toujours mettre à jour le recordId (nécessaire pour les syncs futurs)
       if(at.airtableRecordId && lr.airtableRecordId!==at.airtableRecordId){lr.airtableRecordId=at.airtableRecordId;changed=true;}
+      // Si la feuille est approuvée/verrouillée, on ne touche plus aux données
+      if(isApproved) return;
       if(at.start     && at.start!==lr.start)    {lr.start=at.start;changed=true;}
       if(at.end       && at.end!==lr.end)        {lr.end=at.end;changed=true;}
       if(at.lunch     && at.lunch!==lr.lunch)    {lr.lunch=at.lunch;changed=true;}
-      if(at.pause     && at.pause!==lr.pause)    {lr.pause=at.pause;changed=true;}  // ← FIX #1
+      if(at.pause     && at.pause!==lr.pause)    {lr.pause=at.pause;changed=true;}
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
     });
-    const atApproved = atRows.some(at => at.approved === true);
-    if(atApproved && !sheet.approved){
-      sheet.approved = true;
-      sheet.approvedAt = sheet.approvedAt || new Date().toISOString();
-      changed = true;
-    } else if(!atApproved && sheet.approved){
-      sheet.approved = false;
-      sheet.approvedAt = null;
-      changed = true;
+    // Sync du statut approuvé — seulement si NON verrouillé localement
+    if(!isApproved){
+      const atApproved = atRows.some(at => at.approved === true);
+      if(atApproved && !sheet.approved){
+        sheet.approved = true;
+        sheet.approvedAt = sheet.approvedAt || new Date().toISOString();
+        changed = true;
+      } else if(!atApproved && sheet.approved){
+        sheet.approved = false;
+        sheet.approvedAt = null;
+        changed = true;
+      }
     }
     sheet.totalMinutes=calcSheetTotal(sheet);
     if(changed){ save(); render(); console.log(`✅ Feuille mise à jour: ${emp.name}`); }
@@ -78,9 +85,16 @@ async function syncFullSheetToAirtable(eid, pk){
   if(!emp || !emp.airtableId){ console.log('syncFullSheet: pas airtableId pour', eid); return; }
   const sheetKey = pk ? `${eid}_${pk}` : `${emp.id}_${PERIOD.current().key}`;
   if(_syncLocks.has(sheetKey)){ console.log('syncFullSheet: déjà en cours, skip', sheetKey); return; }
-  _syncLocks.add(sheetKey);
   const sheet = DB.timesheets[sheetKey];
-  if(!sheet){ _syncLocks.delete(sheetKey); return; }
+  if(!sheet) return;
+
+  // ← PROTECTION : feuille approuvée/verrouillée = intouchable
+  if(sheet.approved){
+    console.log(`syncFullSheet: skip — feuille verrouillée (${sheetKey})`);
+    return;
+  }
+
+  _syncLocks.add(sheetKey);
   const periodForLabel = pk
     ? (PERIOD.list(12).find(p => p.key === pk) || PERIOD.current())
     : PERIOD.current();
@@ -162,6 +176,12 @@ async function syncRowToAirtable(eid, pk, idx){
   const sheet = DB.timesheets[sheetKey];
   if(!sheet) return;
 
+  // ← PROTECTION : feuille verrouillée
+  if(sheet.approved){
+    console.log(`syncRowToAirtable: skip — feuille verrouillée (${sheetKey})`);
+    return;
+  }
+
   const row = sheet.rows[idx];
   if(!row) return;
 
@@ -174,7 +194,7 @@ async function syncRowToAirtable(eid, pk, idx){
     start:          row.start     || '',
     end:            row.end       || '',
     lunch:          row.lunch     || '',
-    pause:          row.pause     || '',   // ← FIX #2
+    pause:          row.pause     || '',
     notes:          row.notes     || '',
     adminNote:      row.adminNote || '',
     periodeDePaie:  periodLabel
@@ -254,19 +274,33 @@ async function resyncAllToAirtable(periodKey){
   _syncLocks.clear();
 
   const period = PERIOD.list(12).find(p => p.key === periodKey) || PERIOD.current();
+
+  // Phase 1 : charger depuis Airtable (toujours — pour avoir les recordIds à jour)
   toast(`⬇️ Chargement depuis Airtable (${emps.length} employé(s))…`, 'info', 15000);
   for(const emp of emps){
     await loadSheetFromAirtable(emp, period);
   }
 
-  toast(`⬆️ Envoi vers Airtable (${emps.length} employé(s))…`, 'info', 15000);
+  // Phase 2 : pousser vers Airtable — skip les feuilles approuvées/verrouillées
+  const sheetKey = (emp) => `${emp.id}_${periodKey}`;
+  const empsToSync = emps.filter(emp => {
+    const sheet = DB.timesheets[sheetKey(emp)];
+    if(sheet?.approved){
+      console.log(`resync: skip ${emp.name} — feuille verrouillée`);
+      return false;
+    }
+    return true;
+  });
+
+  const skipped = emps.length - empsToSync.length;
+  toast(`⬆️ Envoi vers Airtable (${empsToSync.length} employé(s)${skipped>0?`, ${skipped} verrouillé(s) ignoré(s)`:''}…`, 'info', 15000);
   let done = 0;
-  for(const emp of emps){
+  for(const emp of empsToSync){
     await syncFullSheetToAirtable(emp.id, periodKey);
     done++;
   }
   save();
-  toast(`✅ Re-sync terminé pour ${done} employé(s).`, 'success');
+  toast(`✅ Re-sync terminé — ${done} sync, ${skipped} verrouillé(s) préservé(s).`, 'success', 5000);
   render();
 }
 
