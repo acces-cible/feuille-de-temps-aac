@@ -36,7 +36,7 @@ function renderEmployee(){
         <button onclick="explainHolidayPay()" class="text-blue-200 hover:text-white text-xs leading-none" title="D'où vient ce calcul?">ℹ️</button>
       </div>
       ${sheet.approved?'<span class="badge-approved text-xs">✓ Approuvé</span>':'<span class="badge-pending text-xs">En attente</span>'}
-      <button data-refresh onclick="refreshFromAirtable()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Rafraîchir depuis Airtable">🔄</button>
+      <button data-refresh onclick="refreshFromAirtable()" class="flex items-center gap-1 bg-blue-500 hover:bg-blue-400 text-white font-semibold rounded-lg px-3 py-2 text-sm" title="Rafraîchir depuis Airtable">🔄 Sync</button>
       <button onclick="state.view='empProfile';render()" class="text-blue-200 hover:text-white text-xl leading-none px-1" title="Mon profil">⚙</button>
       <button onclick="logout()" class="text-blue-200 hover:text-white text-xs">Quitter</button>
     </div>`;
