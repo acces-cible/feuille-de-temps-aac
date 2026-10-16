@@ -1,4 +1,4 @@
-﻿// ================================================================
+﻿﻿// ================================================================
 //  EMPLOYEE VIEW
 // ================================================================
 function renderEmployee(){
@@ -455,6 +455,10 @@ function clearRow(empId,periodKey,rowIdx){
 }
 
 async function quickFill(empId,periodKey,rowIdx,value){
+  if(state.currentUser !== 'admin'){
+    const labels = {'Congé':'Congé','Maladie':'Maladie','Demi-journée':'½ Journée','Absent':'Absent','Férié':'Férié'};
+    if(!confirm(`Confirmer : ${labels[value]||value} pour cette journée?`)) return;
+  }
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row = DB.timesheets[key].rows[rowIdx];
