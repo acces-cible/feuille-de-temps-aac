@@ -213,6 +213,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         <td class="mono text-sm">${row.start||'—'}</td>
         <td class="mono text-sm">${row.lunch||'—'}</td>
         <td class="mono text-sm">${row.end||'—'}</td>
+        <td class="mono text-sm">${row.pause||'—'}</td>
         <td class="total-cell">${worked!==null?fmtMins(worked):'—'}</td>
         <td class="text-xs text-slate-600">${row.notes||''}</td>
         ${adminNoteTd}`;
