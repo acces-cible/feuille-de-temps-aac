@@ -240,8 +240,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="quickFill('${empId}','${period.key}',${i},'Demi-journée')" class="btn btn-blue" style="padding:2px 6px;font-size:11px">½ Journée</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Absent')" class="btn" style="padding:2px 6px;font-size:11px;background:#64748b;color:white">Absent</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Férié')" class="btn" style="padding:2px 6px;font-size:11px;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉 Férié</button>
-            <button onclick="clearRow('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
-            ${isAdmin?`<button onclick="if(confirm('Supprimer cette entrée dans Airtable ?'))clearRowEntry('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Supprimer dans Airtable">×</button>`:''}
+            <button onclick="clearRowEntry('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Supprimer dans Airtable">✕</button>
           </div>
         </td>
         ${adminNoteTd}`;
@@ -456,6 +455,7 @@ function clearRow(empId,periodKey,rowIdx){
 }
 
 async function clearRowEntry(empId,periodKey,rowIdx){
+  if(!confirm('Supprimer cette entrée dans Airtable ?')) return;
   const key=`${empId}_${periodKey}`;
   if(!DB.timesheets[key]) return;
   const row=DB.timesheets[key].rows[rowIdx];
