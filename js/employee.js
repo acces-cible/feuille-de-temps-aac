@@ -1,4 +1,4 @@
-﻿﻿// ================================================================
+// ================================================================
 //  EMPLOYEE VIEW
 // ================================================================
 function renderEmployee(){
@@ -241,6 +241,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="quickFill('${empId}','${period.key}',${i},'Absent')" class="btn" style="padding:2px 6px;font-size:11px;background:#64748b;color:white">Absent</button>
             <button onclick="quickFill('${empId}','${period.key}',${i},'Férié')" class="btn" style="padding:2px 6px;font-size:11px;background:#d97706;color:white" title="Remplit avec l'indemnité de congé férié calculée">🎉 Férié</button>
             <button onclick="clearRow('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Effacer la journée">✕</button>
+            ${isAdmin?`<button onclick="if(confirm('Supprimer cette entrée dans Airtable ?'))clearRowEntry('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Supprimer dans Airtable">×</button>`:''}
           </div>
         </td>
         ${adminNoteTd}`;
@@ -452,6 +453,25 @@ function clearRow(empId,periodKey,rowIdx){
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({empId:emp.airtableId,date:row.date,start:'',end:'',lunch:'',pause:'',notes:'',recordId,forceWrite:true})});
   }
+}
+
+async function clearRowEntry(empId,periodKey,rowIdx){
+  const key=`${empId}_${periodKey}`;
+  if(!DB.timesheets[key]) return;
+  const row=DB.timesheets[key].rows[rowIdx];
+  const emp=DB.employees.find(e=>e.id===empId);
+  const body={};
+  if(row.airtableRecordId){ body.recordId=row.airtableRecordId; }
+  else if(emp?.airtableId && row.date){ body.empId=emp.airtableId; body.date=row.date; }
+  if(body.recordId||body.empId){
+    try{
+      await fetch('/api/deleterecord',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }catch(e){ console.error('clearRowEntry DELETE error:',e.message); }
+  }
+  row.start=''; row.end=''; row.lunch=''; row.pause=''; row.notes=''; row.adminNote='';
+  delete row.airtableRecordId;
+  save();
+  render();
 }
 
 async function quickFill(empId,periodKey,rowIdx,value){
