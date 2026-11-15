@@ -1,4 +1,4 @@
-const axios = require('axios');
+﻿const axios = require('axios');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -36,6 +36,8 @@ module.exports = async function handler(req, res) {
   }
   if (body.adminNote !== undefined) fields["Note Admin"] = body.adminNote;
   if (body.approved  !== undefined) fields["Approuvé"]   = body.approved === true;
+  if (body.realStart !== undefined) fields["Début réel"] = body.realStart || '';
+  if (body.realEnd   !== undefined) fields["Fin réel"]   = body.realEnd   || '';
 
   try {
     if (body.recordId) {
