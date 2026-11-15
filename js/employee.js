@@ -1,4 +1,4 @@
-﻿// ================================================================
+﻿﻿// ================================================================
 //  EMPLOYEE VIEW
 // ================================================================
 function renderEmployee(){
@@ -235,12 +235,14 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         <td><input type="text" class="time-input" placeholder="—" value="${row.start}"
           onfocus="captureOriginal('${empId}','${period.key}',${i},'start',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'start',this.value)"
-          onchange="commitChange('${empId}','${period.key}',${i},'start',this.value);liveCalc('${empId}','${period.key}',${i},'start',this.value)"/></td>
+          onchange="commitChange('${empId}','${period.key}',${i},'start',this.value);liveCalc('${empId}','${period.key}',${i},'start',this.value)"/>
+          ${!isAdmin&&row.realStart?`<div style="font-size:10px;color:#ea580c;font-weight:600;margin-top:2px" title="Heure corrigée par l'admin">✎ ${row.realStart}</div>`:''}</td>
         <td id="cell-lunch-${empId}-${i}"></td>
         <td><input type="text" class="time-input" placeholder="—" value="${row.end}"
           onfocus="captureOriginal('${empId}','${period.key}',${i},'end',this.value)"
           oninput="liveCalc('${empId}','${period.key}',${i},'end',this.value)"
-          onchange="commitChange('${empId}','${period.key}',${i},'end',this.value);liveCalc('${empId}','${period.key}',${i},'end',this.value)"/></td>
+          onchange="commitChange('${empId}','${period.key}',${i},'end',this.value);liveCalc('${empId}','${period.key}',${i},'end',this.value)"/>
+          ${!isAdmin&&row.realEnd?`<div style="font-size:10px;color:#ea580c;font-weight:600;margin-top:2px" title="Heure corrigée par l'admin">✎ ${row.realEnd}</div>`:''}</td>
         <td id="cell-pause-${empId}-${i}"></td>
         <td class="total-cell" id="row-t-${empId}-${i}">${worked!==null?fmtMins(worked):'—'}</td>
         <td>
