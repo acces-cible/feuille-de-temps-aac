@@ -1,4 +1,4 @@
-const axios = require('axios');
+﻿const axios = require('axios');
 
 // GET /api/gettimesheet?empId=recXXXX&periodStart=2026-04-06&periodEnd=2026-04-19
 module.exports = async function handler(req, res) {
@@ -82,7 +82,9 @@ module.exports = async function handler(req, res) {
       lunch:     r.fields['Dîner']      || '',
       pause:     r.fields['Pause']      || '',
       notes:     r.fields['Notes']      || '',
-      adminNote: r.fields['Note Admin'] || '',
+      adminNote: r.fields['Note Admin']  || '',
+      realStart: r.fields['Début réel'] || '',
+      realEnd:   r.fields['Fin réel']   || '',
       approved:  r.fields['Approuvé']   || false,
     }));
 
