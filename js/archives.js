@@ -41,6 +41,7 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({empId:emp.airtableId,date:rowDate,start:row.start||'',end:row.end||'',
         lunch:row.lunch||'',pause:row.pause||'',notes:row.notes||'',adminNote:row.adminNote||'',
+        realStart:row.realStart||'',realEnd:row.realEnd||'',
         total:(()=>{const s2=parseTime(row.start),e2=parseTime(row.end),l2=parseTime(row.lunch)||0,p2=parseTime(row.pause)||0;return (s2!==null&&e2!==null)?fmtMins(Math.max(0,e2-s2-l2-p2)):'';})(),
         periodeDePaie:periodLabel,recordId:row.airtableRecordId||undefined})
     }).then(async r=>{
@@ -374,8 +375,8 @@ function renderArchives(){
   const colWidths=[];
   if(!state.archiveFilter.name) colWidths.push(148);   // Employé
   if(!hasPeriodFilter) colWidths.push(82);              // Période
-  colWidths.push(92, 92, 80, 92, 80, 58, 280, 190, 104);
-  // Date, Début, Dîner, Fin, Pause, Total, Notes+boutons, Note admin, Statut
+  colWidths.push(92, 92, 80, 92, 80, 58, 280, 190, 82, 82, 120, 104);
+  // Date, Début, Dîner, Fin, Pause, Total, Notes+boutons, Note admin, Début réel, Fin réel, Photos, Statut
   const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
   table.innerHTML=`${colgroupHtml}
   <thead><tr class="nav-navy">
@@ -385,13 +386,17 @@ function renderArchives(){
     <th>Début</th><th>Dîner</th>
     <th>Fin</th><th>Pause</th>
     <th>Total</th><th class="text-left pl-2">Notes</th>
-    <th class="text-left pl-2">🔒 Note admin</th><th>Statut</th>
+    <th class="text-left pl-2">🔒 Note admin</th>
+    <th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Début réel</th>
+    <th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Fin réel</th>
+    <th style="min-width:120px">📷 Photos</th>
+    <th>Statut</th>
   </tr></thead>`;
   const tbody=document.createElement('tbody');
 
   if(rows.length===0){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td colspan="11" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
+    tr.innerHTML='<td colspan="20" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
     tbody.appendChild(tr);
   }
 
@@ -407,6 +412,12 @@ function renderArchives(){
     const _periodCellHtml=`<div style="white-space:nowrap">${fmtShort(period.start)}</div><div style="white-space:nowrap">– ${fmtShort(period.end)}</div>`;
 
     if(sheet.approved){
+      const _hasCorr=(row.realStart&&row.realStart!==row.start)||(row.realEnd&&row.realEnd!==row.end);
+      const _dispRS=_hasCorr&&row.realStart
+        ?`<span style="color:#ea580c;font-weight:600">${row.realStart}</span>${row.start?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.start}</small>`:''}`:row.realStart||'—';
+      const _dispRE=_hasCorr&&row.realEnd
+        ?`<span style="color:#ea580c;font-weight:600">${row.realEnd}</span>${row.end?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.end}</small>`:''}`:row.realEnd||'—';
+      const _photosTd=(row.photos||[]).map(p=>`<a href="${p.url}" target="_blank" style="display:inline-block;margin-right:2px"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:32px;width:32px;object-fit:cover;border-radius:4px" title="${(p.filename||'').replace(/"/g,'&quot;')}"/></a>`).join('');
       tr.innerHTML=`
         ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${_empCellHtml}</td>`:''}
         ${!hasPeriodFilter?`<td class="text-xs">${_periodCellHtml}</td>`:''}
@@ -418,6 +429,9 @@ function renderArchives(){
         <td class="total-cell text-xs" id="arch-total-${emp.id}-${row.date}">${w!==null?fmtMins(w):'—'}</td>
         <td class="text-xs" style="max-width:260px;word-break:break-word;white-space:normal">${hl(row.notes)}</td>
         <td class="text-xs" style="max-width:220px;word-break:break-word;white-space:normal;background:#fef9c3">${row.adminNote||''}</td>
+        <td class="mono text-xs">${_dispRS}</td>
+        <td class="mono text-xs">${_dispRE}</td>
+        <td style="padding:4px 6px">${_photosTd}</td>
         <td><span class="badge-approved">✓ Approuvé</span></td>`;
     } else {
       const lOpts=breakOpts.map((v,i)=>`<option value="${v}"${String(row.lunch||'')===v?' selected':''}>${breakLabels[i]}</option>`).join('');
@@ -471,6 +485,20 @@ function renderArchives(){
               class="btn btn-light" style="padding:2px 6px;font-size:11px;flex-shrink:0" title="Agrandir la note admin">🔍</button>
           </div>
         </td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—"
+          value="${(row.realStart||'').replace(/"/g,'&quot;')}"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realStart',this.value)"
+          title="Heure d'arrivée réelle (paie)"/></td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—"
+          value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realEnd',this.value)"
+          title="Heure de départ réelle (paie)"/></td>
+        <td id="arch-photo-cell-${emp.id}-${row.date}" style="padding:4px 8px;vertical-align:middle">
+          ${(row.photos||[]).map(p=>`<a href="${p.url}" target="_blank" style="display:inline-block;margin-right:2px"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" title="${(p.filename||'').replace(/"/g,'&quot;')}"/></a>`).join('')}
+          ${row.airtableRecordId
+            ?`<label style="cursor:pointer;display:inline-block;vertical-align:middle;margin-top:2px"><input type="file" accept="image/*,video/*,application/pdf" style="display:none" onchange="uploadPhotoArchive('${emp.id}','${period.key}','${row.date}',this)"/><span style="font-size:11px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:2px 6px;color:#0369a1">+ Photo</span></label>`
+            :'<span style="font-size:10px;color:#94a3b8">Sync requis</span>'}
+        </td>
         <td style="padding:4px 6px">
           <button onclick="approveArchiveEmployee('${emp.id}','${period.key}')"
             class="btn btn-green text-xs" style="padding:3px 8px;font-size:10px;white-space:nowrap">✓ Approuver</button>
@@ -483,4 +511,43 @@ function renderArchives(){
   detailCard.appendChild(table);
   frag.appendChild(detailCard);
   return frag;
+}
+
+async function uploadPhotoArchive(empId,periodKey,rowDate,input){
+  const file=input.files[0]; if(!file) return;
+  const key=`${empId}_${periodKey}`;
+  if(!DB.timesheets[key]) return;
+  const row=DB.timesheets[key].rows.find(r=>r.date===rowDate);
+  if(!row) return;
+  if(!row.airtableRecordId){ toast('Synchronisez d\'abord avant d\'ajouter une photo.','info'); return; }
+  const span=input.closest('label')?.querySelector('span');
+  if(span) span.textContent='…';
+  try{
+    const ab=await file.arrayBuffer();
+    const bytes=new Uint8Array(ab);
+    let bin=''; for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+    const b64=btoa(bin);
+    const resp=await fetch('/api/uploadphoto',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({recordId:row.airtableRecordId,filename:file.name,mimeType:file.type,data:b64})});
+    if(!resp.ok){ const err=await resp.json(); throw new Error(err.error||resp.status); }
+    const att=await resp.json();
+    if(!row.photos) row.photos=[];
+    row.photos.push(att);
+    save();
+    const cell=document.getElementById(`arch-photo-cell-${empId}-${rowDate}`);
+    if(cell){
+      const a=document.createElement('a'); a.href=att.url; a.target='_blank'; a.style.cssText='display:inline-block;margin-right:2px';
+      const img=document.createElement('img');
+      img.src=(att.thumbnails&&att.thumbnails.small&&att.thumbnails.small.url)||att.url;
+      img.style.cssText='height:36px;width:36px;object-fit:cover;border-radius:4px'; img.title=att.filename||'';
+      a.appendChild(img); cell.insertBefore(a,cell.querySelector('label'));
+    }
+    if(span) span.textContent='+ Photo';
+    input.value='';
+    toast('Photo ajoutée ✓','success');
+  }catch(e){
+    if(span) span.textContent='+ Photo';
+    console.error('uploadPhotoArchive:',e.message);
+    toast(`Erreur upload: ${e.message}`,'error');
+  }
 }
