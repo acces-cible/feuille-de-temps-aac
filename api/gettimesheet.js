@@ -1,4 +1,4 @@
-﻿const axios = require('axios');
+const axios = require('axios');
 
 // GET /api/gettimesheet?empId=recXXXX&periodStart=2026-04-06&periodEnd=2026-04-19
 module.exports = async function handler(req, res) {
@@ -83,9 +83,10 @@ module.exports = async function handler(req, res) {
       pause:     r.fields['Pause']      || '',
       notes:     r.fields['Notes']      || '',
       adminNote: r.fields['Note Admin']  || '',
-      realStart: r.fields['Début réel'] || '',
-      realEnd:   r.fields['Fin réel']   || '',
-      approved:  r.fields['Approuvé']   || false,
+      realStart: r.fields['Début réel']    || '',
+      realEnd:   r.fields['Fin réel']     || '',
+      photos:    r.fields['Photo camera'] || [],
+      approved:  r.fields['Approuvé']     || false,
     }));
 
     res.setHeader('Cache-Control', 'no-store');
