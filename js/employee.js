@@ -1,4 +1,4 @@
-﻿﻿// ================================================================
+// ================================================================
 //  EMPLOYEE VIEW
 // ================================================================
 function renderEmployee(){
@@ -179,6 +179,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
   const table=document.createElement('table');
   const adminNoteCol=isAdmin?'<th style="min-width:260px">🔒 Note admin</th>':'';
   const adminRealCols=isAdmin?'<th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Début réel</th><th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Fin réel</th>':'';
+  const adminPhotoCol=isAdmin?'<th style="min-width:140px">📷 Photos</th>':'';
   table.innerHTML=`<thead><tr class="nav-navy">
     <th class="text-left pl-3" style="min-width:130px">Journée</th>
     <th style="min-width:82px">Début</th>
@@ -187,12 +188,12 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     <th style="min-width:82px">Pause</th>
     <th style="min-width:80px">Total</th>
     <th style="min-width:220px">Notes</th>
-    ${adminRealCols}${adminNoteCol}
+    ${adminRealCols}${adminNoteCol}${adminPhotoCol}
   </tr></thead>`;
   const tbody=document.createElement('tbody');
   const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
   const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
-  const adminCols = isAdmin ? 3 : 0;
+  const adminCols = isAdmin ? 4 : 0;
 
   sheet.rows.forEach((row,i)=>{
     const d=new Date(row.date+'T00:00:00');
@@ -213,6 +214,14 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
           onchange="saveRealHours('${empId}','${period.key}',${i},'realStart',this.value)" title="Heure d'arrivée réelle (paie)"/></td>
         <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
           onchange="saveRealHours('${empId}','${period.key}',${i},'realEnd',this.value)" title="Heure de départ réelle (paie)"/></td>`
+      :'';
+    const photoColTd=isAdmin
+      ?`<td id="photo-cell-${empId}-${i}" style="padding:4px 8px;vertical-align:middle">
+          ${(row.photos||[]).map(p=>`<a href="${p.url}" target="_blank" style="display:inline-block;margin-right:2px"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" title="${(p.filename||'').replace(/"/g,'&quot;')}"/></a>`).join('')}
+          ${row.airtableRecordId
+            ?`<label style="cursor:pointer;display:inline-block;vertical-align:middle;margin-top:2px"><input type="file" accept="image/*,video/*,application/pdf" style="display:none" onchange="uploadPhoto('${empId}','${period.key}',${i},this)"/><span style="font-size:11px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:2px 6px;color:#0369a1">+ Photo</span></label>`
+            :'<span style="font-size:10px;color:#94a3b8">Sync requis</span>'}
+        </td>`
       :'';
     if(locked){
       const hasCorr=(row.realStart&&row.realStart!==row.start)||(row.realEnd&&row.realEnd!==row.end);
@@ -258,7 +267,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="clearRowEntry('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Supprimer dans Airtable">✕</button>
           </div>
         </td>
-        ${realColsTd}${adminNoteTd}`;
+        ${realColsTd}${adminNoteTd}${photoColTd}`;
       const lunchCell = tr.querySelector(`#cell-lunch-${empId}-${i}`);
       if(lunchCell) lunchCell.appendChild(makeBreakSelect('lunch', row.lunch, empId, period.key, i, false));
       const pauseCell = tr.querySelector(`#cell-pause-${empId}-${i}`);
@@ -504,6 +513,44 @@ function saveRealHours(empId,periodKey,rowIdx,field,value){
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({empId:emp.airtableId,date:row.date,realStart:row.realStart||'',realEnd:row.realEnd||'',recordId:row.airtableRecordId})
     }).catch(e=>console.warn('saveRealHours sync:',e.message));
+  }
+}
+
+async function uploadPhoto(empId,periodKey,rowIdx,input){
+  const file=input.files[0]; if(!file) return;
+  const key=`${empId}_${periodKey}`;
+  if(!DB.timesheets[key]) return;
+  const row=DB.timesheets[key].rows[rowIdx];
+  if(!row.airtableRecordId){ toast('Synchronisez d\'abord avant d\'ajouter une photo.','info'); return; }
+  const span=input.closest('label')?.querySelector('span');
+  if(span) span.textContent='…';
+  try{
+    const ab=await file.arrayBuffer();
+    const bytes=new Uint8Array(ab);
+    let bin=''; for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+    const b64=btoa(bin);
+    const resp=await fetch('/api/uploadphoto',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({recordId:row.airtableRecordId,filename:file.name,mimeType:file.type,data:b64})});
+    if(!resp.ok){ const err=await resp.json(); throw new Error(err.error||resp.status); }
+    const att=await resp.json();
+    if(!row.photos) row.photos=[];
+    row.photos.push(att);
+    save();
+    const cell=document.getElementById(`photo-cell-${empId}-${rowIdx}`);
+    if(cell){
+      const a=document.createElement('a'); a.href=att.url; a.target='_blank'; a.style.cssText='display:inline-block;margin-right:2px';
+      const img=document.createElement('img');
+      img.src=(att.thumbnails&&att.thumbnails.small&&att.thumbnails.small.url)||att.url;
+      img.style.cssText='height:36px;width:36px;object-fit:cover;border-radius:4px'; img.title=att.filename||'';
+      a.appendChild(img); cell.insertBefore(a,cell.querySelector('label'));
+    }
+    if(span) span.textContent='+ Photo';
+    input.value='';
+    toast('Photo ajoutée ✓','success');
+  }catch(e){
+    if(span) span.textContent='+ Photo';
+    console.error('uploadPhoto:',e.message);
+    toast(`Erreur upload: ${e.message}`,'error');
   }
 }
 
