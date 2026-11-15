@@ -1,4 +1,4 @@
-// ================================================================
+﻿// ================================================================
 //  EMPLOYEE VIEW
 // ================================================================
 function renderEmployee(){
@@ -178,6 +178,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
   const emp=DB.employees.find(e=>e.id===empId);
   const table=document.createElement('table');
   const adminNoteCol=isAdmin?'<th style="min-width:260px">🔒 Note admin</th>':'';
+  const adminRealCols=isAdmin?'<th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Début réel</th><th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Fin réel</th>':'';
   table.innerHTML=`<thead><tr class="nav-navy">
     <th class="text-left pl-3" style="min-width:130px">Journée</th>
     <th style="min-width:82px">Début</th>
@@ -186,18 +187,18 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     <th style="min-width:82px">Pause</th>
     <th style="min-width:80px">Total</th>
     <th style="min-width:220px">Notes</th>
-    ${adminNoteCol}
+    ${adminRealCols}${adminNoteCol}
   </tr></thead>`;
   const tbody=document.createElement('tbody');
-  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
-  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.start),parseTime(r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
-  const adminCols = isAdmin ? 1 : 0;
+  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
+  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
+  const adminCols = isAdmin ? 3 : 0;
 
   sheet.rows.forEach((row,i)=>{
     const d=new Date(row.date+'T00:00:00');
     const tr=document.createElement('tr');
     tr.className=isWeekend(d)?'bg-weekend':'bg-day';
-    const s=parseTime(row.start),e=parseTime(row.end),l=parseTime(row.lunch),p=parseTime(row.pause);
+    const s=parseTime(row.realStart||row.start),e=parseTime(row.realEnd||row.end),l=parseTime(row.lunch),p=parseTime(row.pause);
     const worked=calcWorked(s,e,l,p);
     const locked=sheet.approved&&!isAdmin;
     const adminNoteTd=isAdmin
@@ -207,12 +208,23 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
           <button onclick="openNotesModal('${empId}','${period.key}',${i},document.getElementById('adminnote-inp-${empId}-${period.key}-${i}').value,'${dayLabelLong(d).replace(/'/g,"\\'")}','adminNote')" class="btn btn-light" style="padding:2px 6px;font-size:11px" title="Agrandir la note admin">🔍</button>
         </div></td>`
       :'';
+    const realColsTd=isAdmin
+      ?`<td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realStart||'').replace(/"/g,'&quot;')}"
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realStart',this.value)" title="Heure d'arrivée réelle (paie)"/></td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realEnd',this.value)" title="Heure de départ réelle (paie)"/></td>`
+      :'';
     if(locked){
+      const hasCorr=(row.realStart&&row.realStart!==row.start)||(row.realEnd&&row.realEnd!==row.end);
+      const dispStart=hasCorr&&row.realStart
+        ?`<span style="color:#ea580c;font-weight:600">${row.realStart}</span>${row.start?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.start}</small>`:''}`:row.start||'—';
+      const dispEnd=hasCorr&&row.realEnd
+        ?`<span style="color:#ea580c;font-weight:600">${row.realEnd}</span>${row.end?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.end}</small>`:''}`:row.end||'—';
       tr.innerHTML=`
         <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
-        <td class="mono text-sm">${row.start||'—'}</td>
+        <td class="mono text-sm">${dispStart}</td>
         <td class="mono text-sm">${row.lunch||'—'}</td>
-        <td class="mono text-sm">${row.end||'—'}</td>
+        <td class="mono text-sm">${dispEnd}</td>
         <td class="mono text-sm">${row.pause||'—'}</td>
         <td class="total-cell">${worked!==null?fmtMins(worked):'—'}</td>
         <td class="text-xs text-slate-600">${row.notes||''}</td>
@@ -244,7 +256,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
             <button onclick="clearRowEntry('${empId}','${period.key}',${i})" class="btn btn-red" style="padding:2px 6px;font-size:11px" title="Supprimer dans Airtable">✕</button>
           </div>
         </td>
-        ${adminNoteTd}`;
+        ${realColsTd}${adminNoteTd}`;
       const lunchCell = tr.querySelector(`#cell-lunch-${empId}-${i}`);
       if(lunchCell) lunchCell.appendChild(makeBreakSelect('lunch', row.lunch, empId, period.key, i, false));
       const pauseCell = tr.querySelector(`#cell-pause-${empId}-${i}`);
@@ -473,6 +485,24 @@ async function clearRowEntry(empId,periodKey,rowIdx){
   delete row.airtableRecordId;
   save();
   render();
+}
+
+function saveRealHours(empId,periodKey,rowIdx,field,value){
+  const key=`${empId}_${periodKey}`;
+  if(!DB.timesheets[key]) return;
+  const row=DB.timesheets[key].rows[rowIdx];
+  row[field]=value;
+  save();
+  const effS=parseTime(row.realStart||row.start),effE=parseTime(row.realEnd||row.end);
+  const worked=calcWorked(effS,effE,parseTime(row.lunch),parseTime(row.pause));
+  const cell=document.getElementById(`row-t-${empId}-${rowIdx}`);
+  if(cell) cell.textContent=worked!==null?fmtMins(worked):'—';
+  const emp=DB.employees.find(e=>e.id===empId);
+  if(emp?.airtableId && row.airtableRecordId){
+    fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({empId:emp.airtableId,date:row.date,realStart:row.realStart||'',realEnd:row.realEnd||'',recordId:row.airtableRecordId})
+    }).catch(e=>console.warn('saveRealHours sync:',e.message));
+  }
 }
 
 async function quickFill(empId,periodKey,rowIdx,value){
