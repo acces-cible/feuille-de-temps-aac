@@ -1,4 +1,4 @@
-// ================================================================
+﻿// ================================================================
 //  AIRTABLE READ
 // ================================================================
 async function loadSheetFromAirtable(emp, periodOverride){
@@ -29,6 +29,8 @@ async function loadSheetFromAirtable(emp, periodOverride){
       if(at.pause     && at.pause!==lr.pause)    {lr.pause=at.pause;changed=true;}
       if(at.notes!==undefined&&at.notes!==lr.notes){lr.notes=at.notes;changed=true;}
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
+      if(at.realStart!==undefined&&at.realStart!==lr.realStart){lr.realStart=at.realStart;changed=true;}
+      if(at.realEnd!==undefined&&at.realEnd!==lr.realEnd){lr.realEnd=at.realEnd;changed=true;}
     });
     // Sync du statut approuvé — seulement si NON verrouillé localement
     if(!isApproved){
