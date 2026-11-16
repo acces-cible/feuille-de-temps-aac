@@ -217,7 +217,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
       :'';
     const photoColTd=isAdmin
       ?`<td id="photo-cell-${empId}-${i}" style="padding:4px 8px;vertical-align:middle">
-          ${(row.photos||[]).map(p=>`<a href="${p.url}" target="_blank" style="display:inline-block;margin-right:2px"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" title="${(p.filename||'').replace(/"/g,'&quot;')}"/></a>`).join('')}
+          ${(row.photos||[]).map(p=>`<a href="#" onclick="openPhoto('${row.airtableRecordId}','${p.id}');return false;" style="display:inline-block;margin-right:2px" title="${(p.filename||'').replace(/"/g,'&quot;')}"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" onerror="this.style.display='none';this.parentNode.textContent='📷'"/></a>`).join('')}
           ${row.airtableRecordId
             ?`<label style="cursor:pointer;display:inline-block;vertical-align:middle;margin-top:2px"><input type="file" accept="image/*,video/*,application/pdf" style="display:none" onchange="uploadPhoto('${empId}','${period.key}',${i},this)"/><span style="font-size:11px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:2px 6px;color:#0369a1">+ Photo</span></label>`
             :'<span style="font-size:10px;color:#94a3b8">Sync requis</span>'}
@@ -514,6 +514,17 @@ function saveRealHours(empId,periodKey,rowIdx,field,value){
       body:JSON.stringify({empId:emp.airtableId,date:row.date,realStart:row.realStart||'',realEnd:row.realEnd||'',recordId:row.airtableRecordId})
     }).catch(e=>console.warn('saveRealHours sync:',e.message));
   }
+}
+
+async function openPhoto(recordId, attachId){
+  try{
+    const r=await fetch(`/api/getphotos?recordId=${encodeURIComponent(recordId)}`);
+    if(!r.ok) throw new Error(r.status);
+    const photos=await r.json();
+    const att=photos.find(p=>p.id===attachId)||photos[0];
+    if(att?.url) window.open(att.url,'_blank');
+    else toast('Photo introuvable.','info');
+  }catch(e){ toast(`Erreur ouverture photo: ${e.message}`,'error'); }
 }
 
 async function uploadPhoto(empId,periodKey,rowIdx,input){
