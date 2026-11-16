@@ -417,7 +417,7 @@ function renderArchives(){
         ?`<span style="color:#ea580c;font-weight:600">${row.realStart}</span>${row.start?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.start}</small>`:''}`:row.realStart||'—';
       const _dispRE=_hasCorr&&row.realEnd
         ?`<span style="color:#ea580c;font-weight:600">${row.realEnd}</span>${row.end?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.end}</small>`:''}`:row.realEnd||'—';
-      const _photosTd=(row.photos||[]).map(p=>`<a href="${p.url}" target="_blank" style="display:inline-block;margin-right:2px"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:32px;width:32px;object-fit:cover;border-radius:4px" title="${(p.filename||'').replace(/"/g,'&quot;')}"/></a>`).join('');
+      const _photosTd=(row.photos||[]).map(p=>`<a href="#" onclick="openPhoto('${row.airtableRecordId}','${p.id}');return false;" style="display:inline-block;margin-right:2px" title="${(p.filename||'').replace(/"/g,'&quot;')}"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:32px;width:32px;object-fit:cover;border-radius:4px" onerror="this.style.display='none';this.parentNode.textContent='📷'"/></a>`).join('');
       tr.innerHTML=`
         ${!state.archiveFilter.name?`<td class="text-left pl-3 text-xs font-medium">${_empCellHtml}</td>`:''}
         ${!hasPeriodFilter?`<td class="text-xs">${_periodCellHtml}</td>`:''}
@@ -494,7 +494,7 @@ function renderArchives(){
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realEnd',this.value)"
           title="Heure de départ réelle (paie)"/></td>
         <td id="arch-photo-cell-${emp.id}-${row.date}" style="padding:4px 8px;vertical-align:middle">
-          ${(row.photos||[]).map(p=>`<a href="${p.url}" target="_blank" style="display:inline-block;margin-right:2px"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" title="${(p.filename||'').replace(/"/g,'&quot;')}"/></a>`).join('')}
+          ${(row.photos||[]).map(p=>`<a href="#" onclick="openPhoto('${row.airtableRecordId}','${p.id}');return false;" style="display:inline-block;margin-right:2px" title="${(p.filename||'').replace(/"/g,'&quot;')}"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" onerror="this.style.display='none';this.parentNode.textContent='📷'"/></a>`).join('')}
           ${row.airtableRecordId
             ?`<label style="cursor:pointer;display:inline-block;vertical-align:middle;margin-top:2px"><input type="file" accept="image/*,video/*,application/pdf" style="display:none" onchange="uploadPhotoArchive('${emp.id}','${period.key}','${row.date}',this)"/><span style="font-size:11px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:2px 6px;color:#0369a1">+ Photo</span></label>`
             :'<span style="font-size:10px;color:#94a3b8">Sync requis</span>'}
