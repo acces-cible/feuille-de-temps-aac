@@ -36,8 +36,10 @@ module.exports = async function handler(req, res) {
   }
   if (body.adminNote !== undefined) fields["Note Admin"] = body.adminNote;
   if (body.approved  !== undefined) fields["Approuvé"]   = body.approved === true;
-  if (body.realStart !== undefined) fields["Début réel"] = body.realStart || '';
-  if (body.realEnd   !== undefined) fields["Fin réel"]   = body.realEnd   || '';
+  if (body.realStart !== undefined) fields["Début réel"]  = body.realStart || '';
+  if (body.realEnd   !== undefined) fields["Fin réel"]    = body.realEnd   || '';
+  if (body.realLunch !== undefined) fields["Dîner réel"]  = body.realLunch || '';
+  if (body.realPause !== undefined) fields["Pause réelle"]= body.realPause || '';
 
   try {
     if (body.recordId) {
