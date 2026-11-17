@@ -497,14 +497,10 @@ function renderArchives(){
           value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realEnd',this.value)"
           title="Heure de départ réelle (paie)"/></td>
-        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—"
-          value="${(row.realLunch||'').replace(/"/g,'&quot;')}"
-          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realLunch',this.value)"
-          title="Dîner réel (paie)"/></td>
-        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—"
-          value="${(row.realPause||'').replace(/"/g,'&quot;')}"
-          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realPause',this.value)"
-          title="Pause réelle (paie)"/></td>
+        <td><select class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" title="Dîner réel (paie)"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realLunch',this.value)">${breakOpts.map((v,bi)=>`<option value="${v}"${String(row.realLunch||'')===v?' selected':''}>${breakLabels[bi]}</option>`).join('')}</select></td>
+        <td><select class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" title="Pause réelle (paie)"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realPause',this.value)">${breakOpts.map((v,bi)=>`<option value="${v}"${String(row.realPause||'')===v?' selected':''}>${breakLabels[bi]}</option>`).join('')}</select></td>
         <td id="arch-photo-cell-${emp.id}-${row.date}" style="padding:4px 8px;vertical-align:middle">
           ${(row.photos||[]).map(p=>`<a href="#" onclick="openPhoto('${row.airtableRecordId}','${p.id}');return false;" style="display:inline-block;margin-right:2px" title="${(p.filename||'').replace(/"/g,'&quot;')}"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" onerror="this.style.display='none';this.parentNode.textContent='📷'"/></a>`).join('')}
           ${row.airtableRecordId
