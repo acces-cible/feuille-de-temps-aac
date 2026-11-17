@@ -85,6 +85,8 @@ module.exports = async function handler(req, res) {
       adminNote: r.fields['Note Admin']  || '',
       realStart: r.fields['Début réel']    || '',
       realEnd:   r.fields['Fin réel']     || '',
+      realLunch: r.fields['Dîner réel']   || '',
+      realPause: r.fields['Pause réelle'] || '',
       photos:    r.fields['Photo camera'] || [],
       approved:  r.fields['Approuvé']     || false,
     }));
