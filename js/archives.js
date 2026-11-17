@@ -41,7 +41,7 @@ function archiveEditField(empId, periodKey, rowDate, field, value){
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({empId:emp.airtableId,date:rowDate,start:row.start||'',end:row.end||'',
         lunch:row.lunch||'',pause:row.pause||'',notes:row.notes||'',adminNote:row.adminNote||'',
-        realStart:row.realStart||'',realEnd:row.realEnd||'',
+        realStart:row.realStart||'',realEnd:row.realEnd||'',realLunch:row.realLunch||'',realPause:row.realPause||'',
         total:(()=>{const s2=parseTime(row.start),e2=parseTime(row.end),l2=parseTime(row.lunch)||0,p2=parseTime(row.pause)||0;return (s2!==null&&e2!==null)?fmtMins(Math.max(0,e2-s2-l2-p2)):'';})(),
         periodeDePaie:periodLabel,recordId:row.airtableRecordId||undefined})
     }).then(async r=>{
@@ -375,8 +375,8 @@ function renderArchives(){
   const colWidths=[];
   if(!state.archiveFilter.name) colWidths.push(148);   // Employé
   if(!hasPeriodFilter) colWidths.push(82);              // Période
-  colWidths.push(92, 92, 80, 92, 80, 58, 280, 190, 82, 82, 120, 104);
-  // Date, Début, Dîner, Fin, Pause, Total, Notes+boutons, Note admin, Début réel, Fin réel, Photos, Statut
+  colWidths.push(92, 92, 80, 92, 80, 58, 280, 190, 82, 82, 82, 82, 120, 104);
+  // Date, Début, Dîner, Fin, Pause, Total, Notes+boutons, Note admin, Début réel, Fin réel, Dîner réel, Pause réelle, Photos, Statut
   const colgroupHtml='<colgroup>'+colWidths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
   table.innerHTML=`${colgroupHtml}
   <thead><tr class="nav-navy">
@@ -389,6 +389,8 @@ function renderArchives(){
     <th class="text-left pl-2">🔒 Note admin</th>
     <th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Début réel</th>
     <th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Fin réel</th>
+    <th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Dîner réel</th>
+    <th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Pause réelle</th>
     <th style="min-width:120px">📷 Photos</th>
     <th>Statut</th>
   </tr></thead>`;
@@ -396,7 +398,7 @@ function renderArchives(){
 
   if(rows.length===0){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td colspan="20" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
+    tr.innerHTML='<td colspan="22" class="text-center text-slate-400 py-6">Aucun résultat.</td>';
     tbody.appendChild(tr);
   }
 
@@ -431,6 +433,8 @@ function renderArchives(){
         <td class="text-xs" style="max-width:220px;word-break:break-word;white-space:normal;background:#fef9c3">${row.adminNote||''}</td>
         <td class="mono text-xs">${_dispRS}</td>
         <td class="mono text-xs">${_dispRE}</td>
+        <td class="mono text-xs">${row.realLunch||'—'}</td>
+        <td class="mono text-xs">${row.realPause||'—'}</td>
         <td style="padding:4px 6px">${_photosTd}</td>
         <td><span class="badge-approved">✓ Approuvé</span></td>`;
     } else {
@@ -493,6 +497,14 @@ function renderArchives(){
           value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
           onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realEnd',this.value)"
           title="Heure de départ réelle (paie)"/></td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—"
+          value="${(row.realLunch||'').replace(/"/g,'&quot;')}"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realLunch',this.value)"
+          title="Dîner réel (paie)"/></td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—"
+          value="${(row.realPause||'').replace(/"/g,'&quot;')}"
+          onchange="archiveEditField('${emp.id}','${period.key}','${row.date}','realPause',this.value)"
+          title="Pause réelle (paie)"/></td>
         <td id="arch-photo-cell-${emp.id}-${row.date}" style="padding:4px 8px;vertical-align:middle">
           ${(row.photos||[]).map(p=>`<a href="#" onclick="openPhoto('${row.airtableRecordId}','${p.id}');return false;" style="display:inline-block;margin-right:2px" title="${(p.filename||'').replace(/"/g,'&quot;')}"><img src="${(p.thumbnails&&p.thumbnails.small&&p.thumbnails.small.url)||p.url}" style="height:36px;width:36px;object-fit:cover;border-radius:4px" onerror="this.style.display='none';this.parentNode.textContent='📷'"/></a>`).join('')}
           ${row.airtableRecordId
