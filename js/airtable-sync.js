@@ -31,6 +31,8 @@ async function loadSheetFromAirtable(emp, periodOverride){
       if(at.adminNote!==undefined&&at.adminNote!==lr.adminNote){lr.adminNote=at.adminNote;changed=true;}
       if(at.realStart!==undefined&&at.realStart!==lr.realStart){lr.realStart=at.realStart;changed=true;}
       if(at.realEnd!==undefined&&at.realEnd!==lr.realEnd){lr.realEnd=at.realEnd;changed=true;}
+      if(at.realLunch!==undefined&&at.realLunch!==lr.realLunch){lr.realLunch=at.realLunch;changed=true;}
+      if(at.realPause!==undefined&&at.realPause!==lr.realPause){lr.realPause=at.realPause;changed=true;}
       if(at.photos!==undefined){lr.photos=at.photos;changed=true;}
     });
     // Sync du statut approuvé — seulement si NON verrouillé localement
