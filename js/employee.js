@@ -178,7 +178,7 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
   const emp=DB.employees.find(e=>e.id===empId);
   const table=document.createElement('table');
   const adminNoteCol=isAdmin?'<th style="min-width:260px">🔒 Note admin</th>':'';
-  const adminRealCols=isAdmin?'<th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Début réel</th><th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Fin réel</th>':'';
+  const adminRealCols=isAdmin?'<th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Début réel</th><th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Fin réel</th><th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Dîner réel</th><th style="min-width:82px;background:#fff7ed;color:#ea580c">✎ Pause réelle</th>':'';
   const adminPhotoCol=isAdmin?'<th style="min-width:140px">📷 Photos</th>':'';
   table.innerHTML=`<thead><tr class="nav-navy">
     <th class="text-left pl-3" style="min-width:130px">Journée</th>
@@ -191,15 +191,15 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
     ${adminRealCols}${adminNoteCol}${adminPhotoCol}
   </tr></thead>`;
   const tbody=document.createElement('tbody');
-  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
-  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.lunch),parseTime(r.pause));return s+(w||0);},0);
-  const adminCols = isAdmin ? 4 : 0;
+  const week1Total = sheet.rows.slice(0,7).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.realLunch||r.lunch),parseTime(r.realPause||r.pause));return s+(w||0);},0);
+  const week2Total = sheet.rows.slice(7,14).reduce((s,r)=>{const w=calcWorked(parseTime(r.realStart||r.start),parseTime(r.realEnd||r.end),parseTime(r.realLunch||r.lunch),parseTime(r.realPause||r.pause));return s+(w||0);},0);
+  const adminCols = isAdmin ? 6 : 0;
 
   sheet.rows.forEach((row,i)=>{
     const d=new Date(row.date+'T00:00:00');
     const tr=document.createElement('tr');
     tr.className=isWeekend(d)?'bg-weekend':'bg-day';
-    const s=parseTime(row.realStart||row.start),e=parseTime(row.realEnd||row.end),l=parseTime(row.lunch),p=parseTime(row.pause);
+    const s=parseTime(row.realStart||row.start),e=parseTime(row.realEnd||row.end),l=parseTime(row.realLunch||row.lunch),p=parseTime(row.realPause||row.pause);
     const worked=calcWorked(s,e,l,p);
     const locked=sheet.approved&&!isAdmin;
     const adminNoteTd=isAdmin
@@ -213,7 +213,11 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
       ?`<td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realStart||'').replace(/"/g,'&quot;')}"
           onchange="saveRealHours('${empId}','${period.key}',${i},'realStart',this.value)" title="Heure d'arrivée réelle (paie)"/></td>
         <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
-          onchange="saveRealHours('${empId}','${period.key}',${i},'realEnd',this.value)" title="Heure de départ réelle (paie)"/></td>`
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realEnd',this.value)" title="Heure de départ réelle (paie)"/></td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realLunch||'').replace(/"/g,'&quot;')}"
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realLunch',this.value)" title="Dîner réel (paie)"/></td>
+        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realPause||'').replace(/"/g,'&quot;')}"
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realPause',this.value)" title="Pause réelle (paie)"/></td>`
       :'';
     const photoColTd=isAdmin
       ?`<td id="photo-cell-${empId}-${i}" style="padding:4px 8px;vertical-align:middle">
@@ -229,12 +233,16 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         ?`<span style="color:#ea580c;font-weight:600">${row.realStart}</span>${row.start?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.start}</small>`:''}`:row.start||'—';
       const dispEnd=hasCorr&&row.realEnd
         ?`<span style="color:#ea580c;font-weight:600">${row.realEnd}</span>${row.end?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.end}</small>`:''}`:row.end||'—';
+      const dispLunch=row.realLunch&&row.realLunch!==row.lunch
+        ?`<span style="color:#ea580c;font-weight:600">${row.realLunch}</span>${row.lunch?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.lunch}</small>`:''}`:row.lunch||'—';
+      const dispPause=row.realPause&&row.realPause!==row.pause
+        ?`<span style="color:#ea580c;font-weight:600">${row.realPause}</span>${row.pause?`<br><small style="color:#94a3b8;text-decoration:line-through">${row.pause}</small>`:''}`:row.pause||'—';
       tr.innerHTML=`
         <td class="text-left pl-3 font-medium text-slate-700 text-xs">${dayLabel(d)}</td>
         <td class="mono text-sm">${dispStart}</td>
-        <td class="mono text-sm">${row.lunch||'—'}</td>
+        <td class="mono text-sm">${dispLunch}</td>
         <td class="mono text-sm">${dispEnd}</td>
-        <td class="mono text-sm">${row.pause||'—'}</td>
+        <td class="mono text-sm">${dispPause}</td>
         <td class="total-cell">${worked!==null?fmtMins(worked):'—'}</td>
         <td class="text-xs text-slate-600">${row.notes||''}</td>
         ${adminNoteTd}`;
@@ -505,13 +513,13 @@ function saveRealHours(empId,periodKey,rowIdx,field,value){
   row[field]=value;
   save();
   const effS=parseTime(row.realStart||row.start),effE=parseTime(row.realEnd||row.end);
-  const worked=calcWorked(effS,effE,parseTime(row.lunch),parseTime(row.pause));
+  const worked=calcWorked(effS,effE,parseTime(row.realLunch||row.lunch),parseTime(row.realPause||row.pause));
   const cell=document.getElementById(`row-t-${empId}-${rowIdx}`);
   if(cell) cell.textContent=worked!==null?fmtMins(worked):'—';
   const emp=DB.employees.find(e=>e.id===empId);
   if(emp?.airtableId && row.airtableRecordId){
     fetch('/api/syncairtable',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({empId:emp.airtableId,date:row.date,realStart:row.realStart||'',realEnd:row.realEnd||'',recordId:row.airtableRecordId})
+      body:JSON.stringify({empId:emp.airtableId,date:row.date,realStart:row.realStart||'',realEnd:row.realEnd||'',realLunch:row.realLunch||'',realPause:row.realPause||'',recordId:row.airtableRecordId})
     }).catch(e=>console.warn('saveRealHours sync:',e.message));
   }
 }
