@@ -277,9 +277,15 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
         </td>
         ${realColsTd}${adminNoteTd}${photoColTd}`;
       const lunchCell = tr.querySelector(`#cell-lunch-${empId}-${i}`);
-      if(lunchCell) lunchCell.appendChild(makeBreakSelect('lunch', row.lunch, empId, period.key, i, false));
+      if(lunchCell){
+        lunchCell.appendChild(makeBreakSelect('lunch', row.lunch, empId, period.key, i, false));
+        if(!isAdmin && row.realLunch){const d=document.createElement('div');d.style.cssText='font-size:10px;color:#ea580c;font-weight:600;margin-top:2px';d.title='Dîner corrigé par l\'admin';d.textContent='✎ '+row.realLunch;lunchCell.appendChild(d);}
+      }
       const pauseCell = tr.querySelector(`#cell-pause-${empId}-${i}`);
-      if(pauseCell) pauseCell.appendChild(makeBreakSelect('pause', row.pause||'', empId, period.key, i, false));
+      if(pauseCell){
+        pauseCell.appendChild(makeBreakSelect('pause', row.pause||'', empId, period.key, i, false));
+        if(!isAdmin && row.realPause){const d=document.createElement('div');d.style.cssText='font-size:10px;color:#ea580c;font-weight:600;margin-top:2px';d.title='Pause corrigée par l\'admin';d.textContent='✎ '+row.realPause;pauseCell.appendChild(d);}
+      }
     }
     tbody.appendChild(tr);
     if(i === 6 || i === 13){
