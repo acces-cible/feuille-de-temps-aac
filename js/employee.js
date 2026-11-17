@@ -209,15 +209,17 @@ function buildDesktopTable(sheet,isAdmin,empId,period){
           <button onclick="openNotesModal('${empId}','${period.key}',${i},document.getElementById('adminnote-inp-${empId}-${period.key}-${i}').value,'${dayLabelLong(d).replace(/'/g,"\\'")}','adminNote')" class="btn btn-light" style="padding:2px 6px;font-size:11px" title="Agrandir la note admin">🔍</button>
         </div></td>`
       :'';
+    const _brkO=[['','—'],['0.25','15 min'],['0.5','30 min'],['0.75','45 min'],['1','1h00'],['1.25','1h15'],['1.5','1h30'],['1.75','1h45'],['2','2h00'],['2.5','2h30'],['3','3h00']];
+    const _brkSel=(val)=>_brkO.map(([v,l])=>`<option value="${v}"${String(val||'')===v?' selected':''}>${l}</option>`).join('');
     const realColsTd=isAdmin
       ?`<td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realStart||'').replace(/"/g,'&quot;')}"
           onchange="saveRealHours('${empId}','${period.key}',${i},'realStart',this.value)" title="Heure d'arrivée réelle (paie)"/></td>
         <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realEnd||'').replace(/"/g,'&quot;')}"
           onchange="saveRealHours('${empId}','${period.key}',${i},'realEnd',this.value)" title="Heure de départ réelle (paie)"/></td>
-        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realLunch||'').replace(/"/g,'&quot;')}"
-          onchange="saveRealHours('${empId}','${period.key}',${i},'realLunch',this.value)" title="Dîner réel (paie)"/></td>
-        <td><input type="text" class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" placeholder="—" value="${(row.realPause||'').replace(/"/g,'&quot;')}"
-          onchange="saveRealHours('${empId}','${period.key}',${i},'realPause',this.value)" title="Pause réelle (paie)"/></td>`
+        <td><select class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" title="Dîner réel (paie)"
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realLunch',this.value)">${_brkSel(row.realLunch)}</select></td>
+        <td><select class="time-input" style="width:72px;background:#fff7ed;border-color:#fdba74" title="Pause réelle (paie)"
+          onchange="saveRealHours('${empId}','${period.key}',${i},'realPause',this.value)">${_brkSel(row.realPause)}</select></td>`
       :'';
     const photoColTd=isAdmin
       ?`<td id="photo-cell-${empId}-${i}" style="padding:4px 8px;vertical-align:middle">
