@@ -121,11 +121,7 @@
   function updateInstallButton() {
     var btn = document.getElementById('pwa-install-btn');
     if (!btn) return;
-    var show = !!(_installEvent && !isInstalled());
-    btn.style.display = show ? '' : 'none';
-    var bar = document.getElementById('pwa-bar');
-    if (bar) bar.style.display = show ? '' : 'none';
-    document.body.classList.toggle('pwa-bar-visible', show);
+    btn.style.display = isInstalled() ? 'none' : '';
   }
 
   window.addEventListener('beforeinstallprompt', function(e) {
