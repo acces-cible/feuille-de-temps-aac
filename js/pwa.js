@@ -121,7 +121,8 @@
   function updateInstallButton() {
     var btn = document.getElementById('pwa-install-btn');
     if (!btn) return;
-    btn.style.display = isInstalled() ? 'none' : '';
+    // Montrer uniquement quand le prompt natif est disponible ET que l'app n'est pas déjà installée
+    btn.style.display = (_installEvent && !isInstalled()) ? '' : 'none';
   }
 
   window.addEventListener('beforeinstallprompt', function(e) {
