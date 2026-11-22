@@ -6,6 +6,11 @@
 <title>Feuille de Temps</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1e3a5f">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
   :root { --navy:#1e3a5f; --blue-day:#dbeafe; --red-weekend:#fee2e2; }
   * { font-family:'Inter',sans-serif; box-sizing:border-box; }
@@ -68,14 +73,14 @@
   .total-cell { font-family:'DM Mono',monospace; font-weight:600; font-size:13px; color:#1e3a5f; }
   .field-label { font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
 
-  /* ── Sticky total banner */
+  /* ── Sticky total banner (au-dessus de la barre PWA) */
   .total-banner {
-    position:fixed; bottom:0; left:0; right:0; z-index:20;
+    position:fixed; bottom:52px; left:0; right:0; z-index:20;
     background:white; border-top:2px solid #e2e8f0;
     padding:12px 16px; box-shadow:0 -4px 16px rgba(0,0,0,.1);
   }
   @supports(padding-bottom:env(safe-area-inset-bottom)){
-    .total-banner { padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
+    .total-banner { bottom:calc(52px + env(safe-area-inset-bottom)); }
   }
 
   /* ── Responsive — mobile-only si écran tactile OU < 1280px */
@@ -97,12 +102,12 @@
   /* ── Sync spinner */
   .sync-spinner { width:14px; height:14px; border:2px solid #93c5fd; border-top-color:#2563eb; border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; }
   @keyframes spin { to{transform:rotate(360deg)} }
-  #sync-indicator { position:fixed; bottom:70px; right:16px; z-index:30; background:white; border:1px solid #e2e8f0;
+  #sync-indicator { position:fixed; bottom:125px; right:16px; z-index:30; background:white; border:1px solid #e2e8f0;
     border-radius:20px; padding:5px 12px; font-size:12px; color:#64748b; display:flex; align-items:center;
     box-shadow:0 2px 8px rgba(0,0,0,.08); transition:opacity .3s; gap:6px; }
 
   /* ── Debug panel */
-  #debug-panel { position:fixed; bottom:0; left:0; right:0; z-index:9998; background:#1e293b; color:#94a3b8;
+  #debug-panel { position:fixed; bottom:52px; left:0; right:0; z-index:9998; background:#1e293b; color:#94a3b8;
     font-family:monospace; font-size:11px; max-height:180px; overflow-y:auto; display:none; }
   #debug-panel.active { display:block; }
   #debug-panel .dp-line { padding:2px 8px; border-bottom:1px solid #334155; }
@@ -112,9 +117,51 @@
 
   /* ── Subtotal row */
   .subtotal-row td { background:#f1f5f9; font-weight:600; font-size:12px; color:#475569; border-top:2px solid #cbd5e1; }
+
+  /* ── Bannière de mise à jour */
+  #update-banner {
+    position:sticky; top:0; z-index:9999;
+    background:#1e3a5f; color:white;
+    padding:10px 16px; display:flex; align-items:center; justify-content:center;
+    gap:12px; flex-wrap:wrap; font-size:15px; line-height:1.4;
+  }
+  #update-banner[hidden] { display:none !important; }
+  #update-banner button {
+    background:white; color:#1e3a5f; border:none; border-radius:8px;
+    padding:10px 20px; font-size:15px; font-weight:600; cursor:pointer; min-height:48px;
+    white-space:nowrap;
+  }
+
+  /* ── Barre PWA (installation + version) */
+  #pwa-bar {
+    position:fixed; bottom:0; left:0; right:0; z-index:31;
+    background:white; border-top:1px solid #e2e8f0;
+    display:flex; align-items:center; justify-content:center;
+    gap:10px; padding:5px 12px; min-height:52px; flex-wrap:wrap;
+  }
+  @supports(padding-bottom:env(safe-area-inset-bottom)){
+    #pwa-bar { padding-bottom:calc(5px + env(safe-area-inset-bottom)); min-height:calc(52px + env(safe-area-inset-bottom)); }
+    .total-banner { bottom:calc(52px + env(safe-area-inset-bottom)); }
+    #debug-panel  { bottom:calc(52px + env(safe-area-inset-bottom)); }
+  }
+  #pwa-install-btn {
+    background:#1e3a5f; color:white; border:none; border-radius:8px;
+    padding:8px 16px; font-size:14px; font-weight:600; cursor:pointer; min-height:40px;
+  }
+  #pwa-install-btn:hover { opacity:.85; }
+  #pwa-version { font-size:12px; color:#94a3b8; }
+  @media(prefers-color-scheme:dark){
+    #pwa-bar { background:#1e293b; border-top-color:#334155; }
+    #pwa-version { color:#64748b; }
+  }
 </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
+<!-- Bannière de mise à jour (hors #app pour survivre aux re-renders) -->
+<div id="update-banner" hidden role="status">
+  <span id="update-msg"></span>
+  <button onclick="doUpdate()">Mettre à jour</button>
+</div>
 <div id="app"></div>
 <div id="toast-container"></div>
 <div id="debug-panel">
@@ -128,6 +175,11 @@
   <div id="debug-log"></div>
 </div>
 <div id="sync-indicator" style="display:none"><div class="sync-spinner"></div><span>Sync…</span></div>
+<!-- Barre PWA : installation + version (hors #app) -->
+<div id="pwa-bar">
+  <button id="pwa-install-btn" onclick="pwaInstall()" style="display:none">📲 Installer l'application</button>
+  <span id="pwa-version">Version ?</span>
+</div>
 <script src="/js/core.js"></script>
 <script src="/js/employee.js"></script>
 <script src="/js/admin.js"></script>
@@ -135,5 +187,6 @@
 <script src="/js/modals.js"></script>
 <script src="/js/airtable-sync.js"></script>
 <script src="/js/app.js"></script>
+<script src="/js/pwa.js"></script>
 </body>
 </html>
