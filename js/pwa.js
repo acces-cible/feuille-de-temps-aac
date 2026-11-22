@@ -1,36 +1,148 @@
-(function(){
+/* ── PWA — Feuille de Temps Accès-Cible ─────────────────────────── */
+/* IMPORTANT : ce listener doit être posé AVANT tout le reste       */
+(function () {
   'use strict';
 
-  // ── 1. Service Worker
+  var _installEvent = null;
+
+  // ── 1. Capturer beforeinstallprompt EN PREMIER ──────────────────
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();          // empêche la mini-barre Chrome — on contrôle l'UI
+    _installEvent = e;
+    _showBtn();
+  });
+
+  // ── 2. Service Worker ────────────────────────────────────────────
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
+    window.addEventListener('load', function () {
       navigator.serviceWorker.register('/sw.js')
-        .then(function(reg) { console.log('[PWA] SW enregistré:', reg.scope); })
-        .catch(function(err) { console.warn('[PWA] SW non enregistré:', err.message); });
+        .then(function (r) { console.log('[PWA] SW:', r.scope); })
+        .catch(function (e) { console.warn('[PWA] SW:', e.message); });
     });
   }
 
-  // ── 2. Version
+  // ── 3. Détection mode installé ───────────────────────────────────
+  function _isInstalled() {
+    return window.matchMedia('(display-mode: standalone)').matches
+        || navigator.standalone === true;
+  }
+
+  // ── 4. Bouton install ────────────────────────────────────────────
+  function _showBtn() {
+    var btn = document.getElementById('pwa-install-btn');
+    if (!btn) return;
+    btn.style.display = _isInstalled() ? 'none' : '';
+  }
+
+  // ── 5. Dialogue d'instructions (iOS / FB / fallback) ────────────
+  function _instMsg() {
+    var ua = navigator.userAgent || '';
+    if (/FBAN|FBAV|FB_IAB|Messenger|Instagram/i.test(ua)) {
+      return 'Ouvre ce lien dans ton navigateur (Chrome ou Safari) :\ntouche les 3 points, puis « Ouvrir dans le navigateur ».\nEnsuite, reviens ici et touche à nouveau « Installer l\'application ».';
+    }
+    var isIOS = /iPhone|iPad/i.test(ua)
+             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+      return '1) Touche Partager (le carré avec une flèche vers le haut).\n2) Touche « Sur l\'écran d\'accueil ».\n3) Touche « Ajouter ».';
+    }
+    return 'Touche les 3 points ⋮\n→ « Installer l\'application »\n   (ou « Ajouter à l\'écran d\'accueil »)\n→ « Installer ».';
+  }
+
+  function _showDialog(msg) {
+    var prev = document.getElementById('pwa-dlg');
+    if (prev) prev.remove();
+    var prevFocus = document.activeElement;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'pwa-dlg';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Installer l\'application');
+    overlay.className = 'no-print';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:10000',
+      'background:rgba(0,0,0,.55);backdrop-filter:blur(3px)',
+      'display:flex;align-items:flex-end;justify-content:center',
+      'padding:16px;box-sizing:border-box'
+    ].join(';');
+
+    var box = document.createElement('div');
+    box.style.cssText = [
+      'background:white;border-radius:16px;padding:24px',
+      'width:100%;max-width:400px;box-shadow:0 -4px 32px rgba(0,0,0,.2)'
+    ].join(';');
+
+    var title = document.createElement('div');
+    title.textContent = '📲 Installer l\'application';
+    title.style.cssText = 'font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px';
+
+    var body = document.createElement('div');
+    body.textContent = msg;
+    body.style.cssText = 'font-size:15px;color:#334155;line-height:1.7;margin-bottom:20px;white-space:pre-line';
+
+    var btn = document.createElement('button');
+    btn.textContent = 'J\'ai compris';
+    btn.style.cssText = [
+      'width:100%;background:#1e3a5f;color:white',
+      'border:none;border-radius:10px;padding:14px',
+      'font-size:16px;font-weight:600;cursor:pointer;min-height:48px'
+    ].join(';');
+    btn.addEventListener('click', close);
+
+    function close() {
+      overlay.remove();
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+    }
+
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    overlay.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+    box.appendChild(title);
+    box.appendChild(body);
+    box.appendChild(btn);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    btn.focus();
+  }
+
+  // ── 6. Clic bouton install ───────────────────────────────────────
+  window.pwaInstall = function () {
+    if (_installEvent) {
+      _installEvent.prompt();
+      _installEvent.userChoice.then(function (r) {
+        if (r.outcome === 'accepted') _showBtn();
+        _installEvent = null;
+      });
+      return;
+    }
+    _showDialog(_instMsg());
+  };
+
+  // ── 7. appinstalled ──────────────────────────────────────────────
+  window.addEventListener('appinstalled', function () {
+    _showBtn();
+    var banner = document.getElementById('update-banner');
+    var msg    = document.getElementById('update-msg');
+    if (banner && msg) {
+      msg.textContent = '✅ Application installée avec succès !';
+      banner.hidden = false;
+      setTimeout(function () { banner.hidden = true; }, 5000);
+    }
+  });
+
+  // ── 8. Vérification mise à jour ──────────────────────────────────
   var _loadedVersion = null;
 
-  function fetchVersion() {
+  function _fetchVer() {
     return fetch('/version.json?t=' + Date.now(), { cache: 'no-store' })
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { return d ? (d.version || null) : null; })
-      .catch(function() { return null; });
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { return d ? (d.version || null) : null; })
+      .catch(function () { return null; });
   }
 
-  function initVersion() {
-    return fetchVersion().then(function(v) {
-      _loadedVersion = v;
-      var el = document.getElementById('pwa-version');
-      if (el) el.textContent = v ? 'Version ' + v : 'Version ?';
-    });
-  }
-
-  function checkUpdate() {
+  function _checkUpdate() {
     if (!_loadedVersion) return;
-    fetchVersion().then(function(v) {
+    _fetchVer().then(function (v) {
       if (!v || v === _loadedVersion) return;
       var banner = document.getElementById('update-banner');
       var msg    = document.getElementById('update-msg');
@@ -41,114 +153,26 @@
     });
   }
 
-  window.doUpdate = function() {
+  window.doUpdate = function () {
     var p = ('serviceWorker' in navigator)
       ? navigator.serviceWorker.getRegistration()
-          .then(function(reg) { if (reg) return reg.update(); })
-          .catch(function() {})
+          .then(function (r) { if (r) return r.update(); })
+          .catch(function () {})
       : Promise.resolve();
-
-    p.then(function() { return caches.keys(); })
-     .then(function(keys) { return Promise.all(keys.map(function(k) { return caches.delete(k); })); })
-     .catch(function() {})
-     .then(function() { location.reload(); });
+    p.then(function () { return caches.keys(); })
+     .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+     .catch(function () {})
+     .then(function () { location.reload(); });
   };
 
-  // ── 3. Installation
-  var _installEvent = null;
-
-  function isInstalled() {
-    return window.matchMedia('(display-mode: standalone)').matches
-        || window.navigator.standalone === true;
-  }
-
-  function esc(s) {
-    return String(s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;');
-  }
-
-  function showInstallDialog(msg) {
-    var prev = document.getElementById('pwa-install-dialog');
-    if (prev) prev.remove();
-
-    var overlay = document.createElement('div');
-    overlay.id = 'pwa-install-dialog';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center;padding:16px;box-sizing:border-box;';
-    overlay.innerHTML =
-      '<div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:400px;box-shadow:0 -4px 32px rgba(0,0,0,.2);">'
-      + '<div style="font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px;">📲 Installer l\'application</div>'
-      + '<div style="font-size:15px;color:#334155;line-height:1.7;margin-bottom:20px;white-space:pre-line;">' + esc(msg) + '</div>'
-      + '<button onclick="document.getElementById(\'pwa-install-dialog\').remove()" '
-      + 'style="width:100%;background:#1e3a5f;color:white;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:600;cursor:pointer;min-height:48px;">Fermer</button>'
-      + '</div>';
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
-    document.body.appendChild(overlay);
-  }
-
-  function getInstallMessage() {
-    var ua = navigator.userAgent || '';
-    // Navigateur intégré Messenger / Facebook / Instagram
-    if (/FBAN|FBAV|FB_IAB|Messenger|Instagram/.test(ua)) {
-      return 'Ouvre d\'abord le site dans ton navigateur :\ntouche les 3 points ⋯ en haut à droite,\npuis « Ouvrir dans le navigateur » (Chrome ou Safari).\nReviens ensuite sur ce bouton.';
-    }
-    // iPhone / iPad (iPadOS peut se présenter comme Mac avec écran tactile)
-    var isIOS = /iPhone|iPad/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 0);
-    if (isIOS) {
-      return 'Avec Safari :\n1) Touche Partager (le carré avec une flèche ↑),\n2) « Sur l\'écran d\'accueil »,\n3) « Ajouter ».';
-    }
-    // Android / autres
-    return 'Touche les 3 points ⋮\n→ « Installer l\'application »\n  (ou « Ajouter à l\'écran d\'accueil »)\n→ « Installer ».';
-  }
-
-  window.pwaInstall = function() {
-    if (_installEvent) {
-      _installEvent.prompt();
-      _installEvent.userChoice.then(function(result) {
-        if (result.outcome === 'accepted') {
-          var btn = document.getElementById('pwa-install-btn');
-          if (btn) btn.style.display = 'none';
-        }
-        _installEvent = null;
-      });
-      return;
-    }
-    showInstallDialog(getInstallMessage());
-  };
-
-  function updateInstallButton() {
-    var btn = document.getElementById('pwa-install-btn');
-    if (!btn) return;
-    btn.style.display = isInstalled() ? 'none' : '';
-  }
-
-  window.addEventListener('beforeinstallprompt', function(e) {
-    // Ne PAS appeler preventDefault — Chrome affiche sa barre d'installation automatiquement
-    _installEvent = e;
-    updateInstallButton();
-  });
-
-  window.addEventListener('appinstalled', function() {
-    var btn = document.getElementById('pwa-install-btn');
-    if (btn) btn.style.display = 'none';
-    var banner = document.getElementById('update-banner');
-    var msg    = document.getElementById('update-msg');
-    if (banner && msg) {
-      msg.textContent = '✅ Application installée avec succès !';
-      banner.hidden = false;
-      setTimeout(function() { banner.hidden = true; }, 5000);
-    }
-  });
-
-  // ── 4. Init
-  document.addEventListener('DOMContentLoaded', function() {
-    updateInstallButton();
-    initVersion();
-    document.addEventListener('visibilitychange', function() {
-      if (document.visibilityState === 'visible') checkUpdate();
+  // ── 9. Init au chargement ────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', function () {
+    _showBtn();
+    _fetchVer().then(function (v) { _loadedVersion = v; });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') _checkUpdate();
     });
-    setInterval(checkUpdate, 10 * 60 * 1000);
+    setInterval(_checkUpdate, 10 * 60 * 1000);
   });
+
 })();
