@@ -125,7 +125,7 @@
   }
 
   window.addEventListener('beforeinstallprompt', function(e) {
-    e.preventDefault();
+    // Ne PAS appeler preventDefault — Chrome affiche sa barre d'installation automatiquement
     _installEvent = e;
     updateInstallButton();
   });
