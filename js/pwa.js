@@ -4,8 +4,9 @@
 
   var deferredPrompt = null;
   var installBtn;
-  var _tapCount = 0;
   var _log = [];
+  var _pressTimer = null;
+  var _longPressed = false;
 
   function log(msg) {
     var t = new Date().toLocaleTimeString('fr-CA');
@@ -74,6 +75,21 @@
     installBtn = el("button", { id: "pwa-install-btn", type: "button", hidden: "" }, "📲 Installer l'application");
     bar.appendChild(installBtn);
     installBtn.addEventListener("click", onInstallClick);
+    // Appui long (2s) → diagnostic
+    installBtn.addEventListener("touchstart", function () {
+      _longPressed = false;
+      _pressTimer = setTimeout(function () {
+        _pressTimer = null;
+        _longPressed = true;
+        showDebug();
+      }, 2000);
+    }, { passive: true });
+    installBtn.addEventListener("touchend", function () {
+      if (_pressTimer) { clearTimeout(_pressTimer); _pressTimer = null; }
+    });
+    installBtn.addEventListener("touchmove", function () {
+      if (_pressTimer) { clearTimeout(_pressTimer); _pressTimer = null; }
+    });
   }
 
   /* ── 5. Visibilité ──────────────────────────────────────────────── */
@@ -160,15 +176,8 @@
   }
 
   async function onInstallClick() {
-    // 5 taps rapides = debug
-    _tapCount++;
-    var t = setTimeout(function () { _tapCount = 0; }, 2000);
-    if (_tapCount >= 5) {
-      _tapCount = 0;
-      clearTimeout(t);
-      await showDebug();
-      return;
-    }
+    // Si l'appui long a déclenché le debug, ne pas ouvrir le dialogue install
+    if (_longPressed) { _longPressed = false; return; }
 
     log('Clic bouton install. deferredPrompt=' + (deferredPrompt ? 'OUI' : 'NON'));
 
