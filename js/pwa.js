@@ -1,4 +1,4 @@
-/* ── PWA — Feuille de Temps Accès-Cible ─────────────────────────── */
+﻿/* ── PWA — Feuille de Temps Accès-Cible ─────────────────────────── */
 (function () {
   "use strict";
 
@@ -113,16 +113,37 @@
     var reg = null;
     try { reg = await navigator.serviceWorker.getRegistration(); } catch(e) {}
 
+    var related = 'non supporté';
+    if (navigator.getInstalledRelatedApps) {
+      try {
+        var apps = await navigator.getInstalledRelatedApps();
+        related = apps.length === 0 ? 'aucune (OK ✅)' : JSON.stringify(apps);
+      } catch(e) { related = 'erreur: ' + e.message; }
+    }
+
+    var manifestStatus = 'non vérifié';
+    try {
+      var mRes = await fetch('/manifest.webmanifest', { cache: 'no-store' });
+      manifestStatus = mRes.ok
+        ? 'OK (' + mRes.status + ') type=' + mRes.headers.get('content-type')
+        : 'ERREUR ' + mRes.status;
+    } catch(e) { manifestStatus = 'erreur: ' + e.message; }
+
     var info = [
       'UA: ' + navigator.userAgent,
       '',
       'deferredPrompt (pwa.js): ' + (deferredPrompt ? 'OUI ✅' : 'NON ❌'),
       'window.__pwa (head): ' + (window.__pwa ? 'OUI ✅' : 'NON ❌'),
+      'BeforeInstallPromptEvent: ' + (typeof BeforeInstallPromptEvent !== 'undefined' ? 'défini ✅' : 'NON défini ❌'),
       'isStandalone: ' + isStandalone(),
       'display-mode: ' + (window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'),
       '',
-      'SW: ' + (reg ? (reg.active ? 'actif (' + (reg.active.scriptURL || '') + ')' : 'pas actif') : 'non enregistré'),
+      'SW: ' + (reg ? (reg.active ? 'actif' : 'pas actif') : 'non enregistré'),
+      'SW scope: ' + (reg ? reg.scope : 'n/a'),
       'SW controller: ' + (navigator.serviceWorker.controller ? 'OUI ✅ (page contrôlée)' : 'NON ❌ (reload requis)'),
+      '',
+      'Manifest fetch: ' + manifestStatus,
+      'Related apps: ' + related,
       '',
       'Log:',
     ].concat(_log).join('\n');
