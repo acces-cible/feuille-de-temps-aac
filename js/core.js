@@ -56,7 +56,7 @@ function logChange(empId, date, field, oldVal, newVal){
 // ================================================================
 //  VERSION — incrémentée à chaque livraison de index.html
 // ================================================================
-const APP_VERSION = 'v1.18 — 22-11-2026';
+const APP_VERSION = 'v1.19 — 22-11-2026';
 
 // ================================================================
 //  DATA SERVICE
