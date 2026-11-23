@@ -1,18 +1,29 @@
 /* ── PWA — Feuille de Temps Accès-Cible ─────────────────────────── */
-/* Script defer : le listener beforeinstallprompt est posé dès l'exécution */
 (function () {
   "use strict";
 
   var deferredPrompt = null;
   var installBtn;
+  var _tapCount = 0;
+  var _log = [];
 
-  /* ── 1. Capturer beforeinstallprompt le plus tôt possible ───────── */
+  function log(msg) {
+    var t = new Date().toLocaleTimeString('fr-CA');
+    _log.push('[' + t + '] ' + msg);
+    console.log('[PWA] ' + msg);
+  }
+
+  /* ── 1. Capturer beforeinstallprompt ────────────────────────────── */
   window.addEventListener("beforeinstallprompt", function (e) {
     e.preventDefault();
     deferredPrompt = e;
+    log('beforeinstallprompt RECU ✅');
+    if (installBtn) installBtn.hidden = false;
   });
 
-  /* ── 2. Styles injectés par JS (comme l'app de réception) ─────── */
+  log('Listener beforeinstallprompt enregistre');
+
+  /* ── 2. Styles ──────────────────────────────────────────────────── */
   var CSS =
     "#pwa-bar{position:fixed;bottom:0;left:0;right:0;z-index:31;" +
     "background:white;border-top:1px solid #e2e8f0;" +
@@ -23,8 +34,7 @@
     "#pwa-bar{padding-bottom:calc(5px + env(safe-area-inset-bottom));min-height:calc(60px + env(safe-area-inset-bottom))}}" +
     "@media(prefers-color-scheme:dark){#pwa-bar{background:#1e293b;border-top-color:#334155}}" +
     "#pwa-install-btn{min-height:48px;padding:8px 20px;border:0;border-radius:8px;" +
-    "background:#1e3a5f;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;" +
-    "font-family:inherit}" +
+    "background:#1e3a5f;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}" +
     "#pwa-install-btn[hidden]{display:none !important}" +
     "#pwa-install-btn:hover{opacity:.85}" +
     ".pwa-overlay{position:fixed;inset:0;z-index:10000;" +
@@ -33,17 +43,18 @@
     "padding:16px;box-sizing:border-box}" +
     ".pwa-card{width:100%;max-width:400px;" +
     "background:white;border-radius:16px;padding:24px;" +
-    "box-shadow:0 -4px 32px rgba(0,0,0,.2)}" +
+    "box-shadow:0 -4px 32px rgba(0,0,0,.2);max-height:80vh;overflow-y:auto}" +
     ".pwa-card-title{font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px}" +
-    ".pwa-card-body{font-size:15px;color:#334155;line-height:1.7;" +
-    "margin-bottom:20px;white-space:pre-line}" +
+    ".pwa-card-body{font-size:15px;color:#334155;line-height:1.7;margin-bottom:12px;white-space:pre-line}" +
     ".pwa-card ol{margin:4px 0 16px;padding-left:24px}" +
     ".pwa-card li{font-size:15px;color:#334155;line-height:1.6;margin-bottom:4px}" +
     ".pwa-card-ok{width:100%;background:#1e3a5f;color:white;border:none;" +
     "border-radius:10px;padding:14px;font-size:16px;font-weight:600;" +
-    "cursor:pointer;min-height:48px;font-family:inherit}";
+    "cursor:pointer;min-height:48px;font-family:inherit}" +
+    ".pwa-dbg{font-family:monospace;font-size:12px;background:#f1f5f9;border-radius:8px;" +
+    "padding:10px;margin-bottom:12px;color:#334155;white-space:pre-wrap;max-height:200px;overflow-y:auto}";
 
-  /* ── 3. Utilitaires DOM ─────────────────────────────────────────── */
+  /* ── 3. DOM helpers ─────────────────────────────────────────────── */
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
     if (attrs) for (var k in attrs) node.setAttribute(k, attrs[k]);
@@ -51,7 +62,7 @@
     return node;
   }
 
-  /* ── 4. Construction de l'UI ────────────────────────────────────── */
+  /* ── 4. Build UI ────────────────────────────────────────────────── */
   function buildUi() {
     var style = el("style", { id: "pwa-css" });
     style.textContent = CSS;
@@ -65,7 +76,7 @@
     installBtn.addEventListener("click", onInstallClick);
   }
 
-  /* ── 5. Afficher/cacher le bouton ET la barre ───────────────────── */
+  /* ── 5. Visibilité ──────────────────────────────────────────────── */
   function isStandalone() {
     return (
       (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
@@ -81,9 +92,28 @@
     document.body.classList.toggle("pwa-bar-visible", !installed);
   }
 
-  /* ── 6. Dialogue d'instructions ─────────────────────────────────── */
-  var lastFocus = null;
+  /* ── 6. Panneau debug ───────────────────────────────────────────── */
+  async function showDebug() {
+    var reg = null;
+    try { reg = await navigator.serviceWorker.getRegistration(); } catch(e) {}
 
+    var info = [
+      'UA: ' + navigator.userAgent,
+      '',
+      'beforeinstallprompt: ' + (deferredPrompt ? 'OUI ✅' : 'NON ❌'),
+      'isStandalone: ' + isStandalone(),
+      'display-mode: ' + (window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'),
+      '',
+      'SW: ' + (reg ? (reg.active ? 'actif (' + (reg.active.scriptURL || '') + ')' : 'pas actif') : 'non enregistré'),
+      '',
+      'Log:',
+    ].concat(_log).join('\n');
+
+    openModal('🔍 Diagnostic PWA', [info], true);
+  }
+
+  /* ── 7. Modal ───────────────────────────────────────────────────── */
+  var lastFocus = null;
   function closeModal() {
     var o = document.getElementById("pwa-overlay");
     if (o) o.remove();
@@ -92,7 +122,7 @@
   }
   function onKey(e) { if (e.key === "Escape") closeModal(); }
 
-  function openModal(title, blocks) {
+  function openModal(title, blocks, isDebug) {
     closeModal();
     lastFocus = document.activeElement;
     var overlay = el("div", { id: "pwa-overlay", class: "pwa-overlay" });
@@ -103,11 +133,14 @@
         var ol = el("ol");
         b.forEach(function (line) { ol.appendChild(el("li", null, line)); });
         card.appendChild(ol);
+      } else if (isDebug) {
+        var pre = el("div", { class: "pwa-dbg" }, b);
+        card.appendChild(pre);
       } else {
         card.appendChild(el("div", { class: "pwa-card-body" }, b));
       }
     });
-    var ok = el("button", { class: "pwa-card-ok", type: "button" }, "J'ai compris");
+    var ok = el("button", { class: "pwa-card-ok", type: "button" }, "Fermer");
     ok.addEventListener("click", closeModal);
     card.appendChild(ok);
     overlay.appendChild(card);
@@ -117,7 +150,7 @@
     ok.focus();
   }
 
-  /* ── 7. Clic sur « Installer » ──────────────────────────────────── */
+  /* ── 8. Clic install ────────────────────────────────────────────── */
   function detectDevice() {
     var ua = navigator.userAgent || "";
     if (/FBAN|FBAV|FB_IAB|Messenger|Instagram/i.test(ua)) return "inapp";
@@ -127,16 +160,37 @@
   }
 
   async function onInstallClick() {
+    // 5 taps rapides = debug
+    _tapCount++;
+    var t = setTimeout(function () { _tapCount = 0; }, 2000);
+    if (_tapCount >= 5) {
+      _tapCount = 0;
+      clearTimeout(t);
+      await showDebug();
+      return;
+    }
+
+    log('Clic bouton install. deferredPrompt=' + (deferredPrompt ? 'OUI' : 'NON'));
+
     if (deferredPrompt) {
       var p = deferredPrompt;
       deferredPrompt = null;
       try {
         await p.prompt();
-        if (p.userChoice) await p.userChoice;
-      } catch (err) {}
+        log('prompt() appele');
+        if (p.userChoice) {
+          var choice = await p.userChoice;
+          log('userChoice: ' + choice.outcome);
+        }
+      } catch (err) {
+        log('Erreur prompt: ' + err.message);
+      }
       return;
     }
+
     var device = detectDevice();
+    log('Pas de prompt. device=' + device);
+
     if (device === "inapp") {
       openModal("📲 Installer l'application", [
         "Ouvre d'abord le site dans Chrome ou Safari :\ntouche les 3 points en haut à droite,\npuis « Ouvrir dans le navigateur ».\nReviens ensuite sur ce bouton."
@@ -153,14 +207,15 @@
     }
   }
 
-  /* ── 8. appinstalled ────────────────────────────────────────────── */
+  /* ── 9. appinstalled ────────────────────────────────────────────── */
   window.addEventListener("appinstalled", function () {
+    log('appinstalled recu');
     deferredPrompt = null;
     refreshBtn();
     openModal("✅ Installée !", ["L'application est installée. Tu la trouveras sur ton écran d'accueil."]);
   });
 
-  /* ── 9. Vérification mise à jour ────────────────────────────────── */
+  /* ── 10. Mise à jour ────────────────────────────────────────────── */
   var loadedVersion = null;
 
   async function fetchVersion() {
@@ -192,10 +247,11 @@
      .then(function () { location.reload(); });
   };
 
-  /* ── 10. Démarrage ──────────────────────────────────────────────── */
+  /* ── 11. Init ───────────────────────────────────────────────────── */
   function init() {
     buildUi();
     refreshBtn();
+    log('Init. isStandalone=' + isStandalone());
 
     if (window.matchMedia) {
       var mq = window.matchMedia("(display-mode: standalone)");
@@ -209,7 +265,11 @@
     setInterval(checkUpdate, 10 * 60 * 1000);
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(function () {});
+      navigator.serviceWorker.register("/sw.js")
+        .then(function (r) { log('SW enregistre: ' + r.scope + ' state=' + (r.active ? r.active.state : 'installing')); })
+        .catch(function (e) { log('SW erreur: ' + e.message); });
+    } else {
+      log('SW non supporte');
     }
   }
 
