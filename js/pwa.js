@@ -122,6 +122,7 @@
       'display-mode: ' + (window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'),
       '',
       'SW: ' + (reg ? (reg.active ? 'actif (' + (reg.active.scriptURL || '') + ')' : 'pas actif') : 'non enregistré'),
+      'SW controller: ' + (navigator.serviceWorker.controller ? 'OUI ✅ (page contrôlée)' : 'NON ❌ (reload requis)'),
       '',
       'Log:',
     ].concat(_log).join('\n');
