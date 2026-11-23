@@ -20,7 +20,14 @@
   }
 
   function refreshBtn() {
-    if (installBtn) installBtn.hidden = isStandalone();
+    var installed = isStandalone();
+    if (installBtn) installBtn.hidden = installed;
+    // Cacher toute la barre si installé (mode standalone), sinon la montrer
+    var bar = document.getElementById('pwa-bar');
+    if (bar) {
+      bar.hidden = installed;
+      document.body.classList.toggle('pwa-bar-visible', !installed);
+    }
   }
 
   // ── 3. Dialogue d'explication (iOS / FB / autres sans prompt)
@@ -178,15 +185,15 @@
   function init() {
     installBtn = document.getElementById('pwa-install-btn');
     if (installBtn) {
-      installBtn.hidden = isStandalone();
       installBtn.addEventListener('click', onInstallClick);
     }
 
     // Récupérer l'event capturé par l'inline <head> si pwa.js n'était pas encore parsé
     if (window.__pwa && !deferredPrompt) {
       deferredPrompt = window.__pwa;
-      if (installBtn) installBtn.hidden = false;
     }
+
+    refreshBtn();
 
     if (window.matchMedia) {
       var mq = window.matchMedia('(display-mode: standalone)');
