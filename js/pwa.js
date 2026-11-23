@@ -1,179 +1,190 @@
 /* ── PWA — Feuille de Temps Accès-Cible ─────────────────────────── */
+/* Script defer : le listener beforeinstallprompt est posé dès l'exécution */
 (function () {
-  'use strict';
+  "use strict";
 
   var deferredPrompt = null;
   var installBtn;
 
-  // ── 1. Capturer beforeinstallprompt EN PREMIER
-  //    (l'inline <head> le capture aussi, on récupère les deux)
-  window.addEventListener('beforeinstallprompt', function (e) {
+  /* ── 1. Capturer beforeinstallprompt le plus tôt possible ───────── */
+  window.addEventListener("beforeinstallprompt", function (e) {
     e.preventDefault();
     deferredPrompt = e;
-    if (installBtn) installBtn.hidden = false;
   });
 
-  // ── 2. Helpers UI
+  /* ── 2. Styles injectés par JS (comme l'app de réception) ─────── */
+  var CSS =
+    "#pwa-bar{position:fixed;bottom:0;left:0;right:0;z-index:31;" +
+    "background:white;border-top:1px solid #e2e8f0;" +
+    "display:flex;align-items:center;justify-content:center;" +
+    "gap:10px;padding:5px 12px;min-height:60px;flex-wrap:wrap}" +
+    "#pwa-bar[hidden]{display:none !important}" +
+    "@supports(padding-bottom:env(safe-area-inset-bottom)){" +
+    "#pwa-bar{padding-bottom:calc(5px + env(safe-area-inset-bottom));min-height:calc(60px + env(safe-area-inset-bottom))}}" +
+    "@media(prefers-color-scheme:dark){#pwa-bar{background:#1e293b;border-top-color:#334155}}" +
+    "#pwa-install-btn{min-height:48px;padding:8px 20px;border:0;border-radius:8px;" +
+    "background:#1e3a5f;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;" +
+    "font-family:inherit}" +
+    "#pwa-install-btn[hidden]{display:none !important}" +
+    "#pwa-install-btn:hover{opacity:.85}" +
+    ".pwa-overlay{position:fixed;inset:0;z-index:10000;" +
+    "background:rgba(0,0,0,.55);backdrop-filter:blur(3px);" +
+    "display:flex;align-items:flex-end;justify-content:center;" +
+    "padding:16px;box-sizing:border-box}" +
+    ".pwa-card{width:100%;max-width:400px;" +
+    "background:white;border-radius:16px;padding:24px;" +
+    "box-shadow:0 -4px 32px rgba(0,0,0,.2)}" +
+    ".pwa-card-title{font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px}" +
+    ".pwa-card-body{font-size:15px;color:#334155;line-height:1.7;" +
+    "margin-bottom:20px;white-space:pre-line}" +
+    ".pwa-card ol{margin:4px 0 16px;padding-left:24px}" +
+    ".pwa-card li{font-size:15px;color:#334155;line-height:1.6;margin-bottom:4px}" +
+    ".pwa-card-ok{width:100%;background:#1e3a5f;color:white;border:none;" +
+    "border-radius:10px;padding:14px;font-size:16px;font-weight:600;" +
+    "cursor:pointer;min-height:48px;font-family:inherit}";
+
+  /* ── 3. Utilitaires DOM ─────────────────────────────────────────── */
+  function el(tag, attrs, text) {
+    var node = document.createElement(tag);
+    if (attrs) for (var k in attrs) node.setAttribute(k, attrs[k]);
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  /* ── 4. Construction de l'UI ────────────────────────────────────── */
+  function buildUi() {
+    var style = el("style", { id: "pwa-css" });
+    style.textContent = CSS;
+    document.head.appendChild(style);
+
+    var bar = document.getElementById("pwa-bar");
+    if (!bar) return;
+
+    installBtn = el("button", { id: "pwa-install-btn", type: "button", hidden: "" }, "📲 Installer l'application");
+    bar.appendChild(installBtn);
+    installBtn.addEventListener("click", onInstallClick);
+  }
+
+  /* ── 5. Afficher/cacher le bouton ET la barre ───────────────────── */
   function isStandalone() {
-    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-        || window.navigator.standalone === true;
+    return (
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+      window.navigator.standalone === true
+    );
   }
 
   function refreshBtn() {
+    var bar = document.getElementById("pwa-bar");
     var installed = isStandalone();
     if (installBtn) installBtn.hidden = installed;
-    // Cacher toute la barre si installé (mode standalone), sinon la montrer
-    var bar = document.getElementById('pwa-bar');
-    if (bar) {
-      bar.hidden = installed;
-      document.body.classList.toggle('pwa-bar-visible', !installed);
-    }
+    if (bar) bar.hidden = installed;
+    document.body.classList.toggle("pwa-bar-visible", !installed);
   }
 
-  // ── 3. Dialogue d'explication (iOS / FB / autres sans prompt)
-  var _lastFocus = null;
+  /* ── 6. Dialogue d'instructions ─────────────────────────────────── */
+  var lastFocus = null;
 
   function closeModal() {
-    var o = document.getElementById('pwa-overlay');
+    var o = document.getElementById("pwa-overlay");
     if (o) o.remove();
-    document.removeEventListener('keydown', _onKey);
-    if (_lastFocus && _lastFocus.focus) _lastFocus.focus();
+    document.removeEventListener("keydown", onKey);
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
-
-  function _onKey(e) {
-    if (e.key === 'Escape') closeModal();
-  }
+  function onKey(e) { if (e.key === "Escape") closeModal(); }
 
   function openModal(title, blocks) {
     closeModal();
-    _lastFocus = document.activeElement;
-
-    var overlay = document.createElement('div');
-    overlay.id = 'pwa-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center;padding:16px;box-sizing:border-box';
-
-    var card = document.createElement('div');
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.style.cssText = 'background:white;border-radius:16px;padding:24px;width:100%;max-width:400px;box-shadow:0 -4px 32px rgba(0,0,0,.2)';
-
-    var h = document.createElement('div');
-    h.textContent = title;
-    h.style.cssText = 'font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px';
-    card.appendChild(h);
-
+    lastFocus = document.activeElement;
+    var overlay = el("div", { id: "pwa-overlay", class: "pwa-overlay" });
+    var card    = el("div", { class: "pwa-card", role: "dialog", "aria-modal": "true" });
+    card.appendChild(el("div", { class: "pwa-card-title" }, title));
     blocks.forEach(function (b) {
       if (Array.isArray(b)) {
-        var ol = document.createElement('ol');
-        ol.style.cssText = 'margin:0 0 14px;padding-left:24px';
-        b.forEach(function (line) {
-          var li = document.createElement('li');
-          li.textContent = line;
-          li.style.cssText = 'font-size:15px;color:#334155;line-height:1.6;margin-bottom:4px';
-          ol.appendChild(li);
-        });
+        var ol = el("ol");
+        b.forEach(function (line) { ol.appendChild(el("li", null, line)); });
         card.appendChild(ol);
       } else {
-        var p = document.createElement('div');
-        p.textContent = b;
-        p.style.cssText = 'font-size:15px;color:#334155;line-height:1.7;margin-bottom:12px;white-space:pre-line';
-        card.appendChild(p);
+        card.appendChild(el("div", { class: "pwa-card-body" }, b));
       }
     });
-
-    var ok = document.createElement('button');
-    ok.textContent = 'J\'ai compris';
-    ok.style.cssText = 'width:100%;background:#1e3a5f;color:white;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:600;cursor:pointer;min-height:48px;margin-top:4px';
-    ok.addEventListener('click', closeModal);
+    var ok = el("button", { class: "pwa-card-ok", type: "button" }, "J'ai compris");
+    ok.addEventListener("click", closeModal);
     card.appendChild(ok);
-
     overlay.appendChild(card);
-    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
-    document.addEventListener('keydown', _onKey);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) closeModal(); });
+    document.addEventListener("keydown", onKey);
     document.body.appendChild(overlay);
     ok.focus();
   }
 
+  /* ── 7. Clic sur « Installer » ──────────────────────────────────── */
   function detectDevice() {
-    var ua = navigator.userAgent || '';
-    if (/FBAN|FBAV|FB_IAB|Messenger|Instagram/i.test(ua)) return 'inapp';
-    var isIos = /iPhone|iPad|iPod/i.test(ua)
-             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    return isIos ? 'ios' : 'other';
+    var ua = navigator.userAgent || "";
+    if (/FBAN|FBAV|FB_IAB|Messenger|Instagram/i.test(ua)) return "inapp";
+    var isIos = /iPhone|iPad|iPod/i.test(ua) ||
+                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    return isIos ? "ios" : "other";
   }
 
-  // ── 4. Clic bouton install
-  function onInstallClick() {
-    // Récupérer aussi depuis l'inline <head> si disponible
-    if (!deferredPrompt && window.__pwa) deferredPrompt = window.__pwa;
-
+  async function onInstallClick() {
     if (deferredPrompt) {
       var p = deferredPrompt;
       deferredPrompt = null;
-      window.__pwa = null;
-      p.prompt();
-      if (p.userChoice) {
-        p.userChoice.then(function () { refreshBtn(); }).catch(function () {});
-      }
+      try {
+        await p.prompt();
+        if (p.userChoice) await p.userChoice;
+      } catch (err) {}
       return;
     }
-
     var device = detectDevice();
-    if (device === 'inapp') {
-      openModal('📲 Installer l\'application', [
-        'Ouvre ce lien dans ton navigateur (Chrome ou Safari) :\ntouche les 3 points en haut à droite,\npuis « Ouvrir dans le navigateur ».\nReviens ensuite sur ce bouton.'
+    if (device === "inapp") {
+      openModal("📲 Installer l'application", [
+        "Ouvre d'abord le site dans Chrome ou Safari :\ntouche les 3 points en haut à droite,\npuis « Ouvrir dans le navigateur ».\nReviens ensuite sur ce bouton."
       ]);
-    } else if (device === 'ios') {
-      openModal('📲 Installer l\'application', [
-        'Avec Safari :',
-        [
-          'Touche Partager (le carré avec une flèche vers le haut).',
-          'Touche « Sur l\'écran d\'accueil ».',
-          'Touche « Ajouter ».'
-        ]
+    } else if (device === "ios") {
+      openModal("📲 Installer l'application", [
+        "Avec Safari :",
+        ["Touche Partager (le carré avec une flèche ↑).", "Touche « Sur l'écran d'accueil ».", "Touche « Ajouter »."]
       ]);
     } else {
-      openModal('📲 Installer l\'application', [
-        'Touche les 3 points ⋮\n→ « Installer l\'application » (ou « Ajouter à l\'écran d\'accueil »)\n→ « Installer ».'
+      openModal("📲 Installer l'application", [
+        "Touche les 3 points ⋮\n→ « Installer l'application »\n   (ou « Ajouter à l'écran d'accueil »)\n→ « Installer »."
       ]);
     }
   }
 
-  // ── 5. appinstalled
-  window.addEventListener('appinstalled', function () {
+  /* ── 8. appinstalled ────────────────────────────────────────────── */
+  window.addEventListener("appinstalled", function () {
     deferredPrompt = null;
-    if (installBtn) installBtn.hidden = true;
-    openModal('✅ Installée !', ['L\'application est installée. Tu la trouveras sur ton écran d\'accueil.']);
+    refreshBtn();
+    openModal("✅ Installée !", ["L'application est installée. Tu la trouveras sur ton écran d'accueil."]);
   });
 
-  // ── 6. Vérification mise à jour
-  var _loadedVersion = null;
+  /* ── 9. Vérification mise à jour ────────────────────────────────── */
+  var loadedVersion = null;
 
-  function _fetchVer() {
-    return fetch('/version.json?t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { return d ? (d.version || null) : null; })
-      .catch(function () { return null; });
+  async function fetchVersion() {
+    try {
+      var res = await fetch("/version.json?t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) return null;
+      var d = await res.json();
+      return d && d.version ? d.version : null;
+    } catch (e) { return null; }
   }
 
-  function _checkUpdate() {
-    if (!_loadedVersion) return;
-    _fetchVer().then(function (v) {
-      if (!v || v === _loadedVersion) return;
-      var banner = document.getElementById('update-banner');
-      var msg    = document.getElementById('update-msg');
-      if (banner && msg) {
-        msg.textContent = 'Nouvelle version disponible (' + v + ')';
-        banner.hidden = false;
-      }
-    });
+  async function checkUpdate() {
+    if (!loadedVersion) return;
+    var v = await fetchVersion();
+    if (!v || v === loadedVersion) return;
+    var banner = document.getElementById("update-banner");
+    var msg    = document.getElementById("update-msg");
+    if (banner && msg) { msg.textContent = "Nouvelle version disponible (" + v + ")"; banner.hidden = false; }
   }
 
   window.doUpdate = function () {
-    var p = ('serviceWorker' in navigator)
+    var p = ("serviceWorker" in navigator)
       ? navigator.serviceWorker.getRegistration()
-          .then(function (r) { if (r) return r.update(); })
-          .catch(function () {})
+          .then(function (r) { if (r) return r.update(); }).catch(function () {})
       : Promise.resolve();
     p.then(function () { return caches.keys(); })
      .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
@@ -181,42 +192,28 @@
      .then(function () { location.reload(); });
   };
 
-  // ── 7. Init
+  /* ── 10. Démarrage ──────────────────────────────────────────────── */
   function init() {
-    installBtn = document.getElementById('pwa-install-btn');
-    if (installBtn) {
-      installBtn.addEventListener('click', onInstallClick);
-    }
-
-    // Récupérer l'event capturé par l'inline <head> si pwa.js n'était pas encore parsé
-    if (window.__pwa && !deferredPrompt) {
-      deferredPrompt = window.__pwa;
-    }
-
+    buildUi();
     refreshBtn();
 
     if (window.matchMedia) {
-      var mq = window.matchMedia('(display-mode: standalone)');
-      if (mq.addEventListener) mq.addEventListener('change', refreshBtn);
+      var mq = window.matchMedia("(display-mode: standalone)");
+      if (mq.addEventListener) mq.addEventListener("change", refreshBtn);
     }
 
-    _fetchVer().then(function (v) { _loadedVersion = v; });
-    document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') _checkUpdate();
+    fetchVersion().then(function (v) { loadedVersion = v; });
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") checkUpdate();
     });
-    setInterval(_checkUpdate, 10 * 60 * 1000);
+    setInterval(checkUpdate, 10 * 60 * 1000);
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .then(function (r) { console.log('[PWA] SW:', r.scope); })
-        .catch(function (err) { console.warn('[PWA] SW:', err.message); });
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(function () {});
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 
 })();
