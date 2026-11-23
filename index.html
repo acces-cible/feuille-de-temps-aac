@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="fr-CA">
 <head>
 <meta charset="UTF-8">
@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<script>window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__pwa=e;});</script>
 <script src="/js/pwa.js" defer></script>
 <style>
   :root { --navy:#1e3a5f; --blue-day:#dbeafe; --red-weekend:#fee2e2; }
@@ -178,7 +179,7 @@
 <div id="sync-indicator" style="display:none"><div class="sync-spinner"></div><span>Sync…</span></div>
 <!-- Barre PWA : bouton d'installation (hors #app) -->
 <div id="pwa-bar">
-  <button id="pwa-install-btn" onclick="pwaInstall()" style="display:none">📲 Installer l'application</button>
+  <button id="pwa-install-btn" hidden>📲 Installer l'application</button>
 </div>
 <script src="/js/core.js"></script>
 <script src="/js/employee.js"></script>
@@ -189,3 +190,4 @@
 <script src="/js/app.js"></script>
 </body>
 </html>
+
