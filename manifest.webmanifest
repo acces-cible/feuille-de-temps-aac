@@ -1,7 +1,7 @@
-{
-  "id": "/fdt",
+﻿{
   "name": "Feuille de Temps — Accès-Cible",
   "short_name": "Feuille de Temps",
+  "description": "Saisie de feuilles de temps pour Accès-Cible",
   "lang": "fr-CA",
   "start_url": "/",
   "scope": "/",
