@@ -116,7 +116,8 @@
     var info = [
       'UA: ' + navigator.userAgent,
       '',
-      'beforeinstallprompt: ' + (deferredPrompt ? 'OUI ✅' : 'NON ❌'),
+      'deferredPrompt (pwa.js): ' + (deferredPrompt ? 'OUI ✅' : 'NON ❌'),
+      'window.__pwa (head): ' + (window.__pwa ? 'OUI ✅' : 'NON ❌'),
       'isStandalone: ' + isStandalone(),
       'display-mode: ' + (window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'),
       '',
@@ -181,9 +182,16 @@
 
     log('Clic bouton install. deferredPrompt=' + (deferredPrompt ? 'OUI' : 'NON'));
 
+    // Récupérer aussi depuis l'inline <head> si deferredPrompt est vide
+    if (!deferredPrompt && window.__pwa) {
+      deferredPrompt = window.__pwa;
+      log('Récupéré depuis window.__pwa');
+    }
+
     if (deferredPrompt) {
       var p = deferredPrompt;
       deferredPrompt = null;
+      window.__pwa = null;
       try {
         await p.prompt();
         log('prompt() appele');
