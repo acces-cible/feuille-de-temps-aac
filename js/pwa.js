@@ -19,7 +19,8 @@
     e.preventDefault();
     deferredPrompt = e;
     log('beforeinstallprompt RECU ✅');
-    if (installBtn) installBtn.hidden = false;
+    try { localStorage.removeItem("pwa-bar-dismissed"); } catch(e2) {}
+    refreshBtn();
   });
 
   log('Listener beforeinstallprompt enregistre');
@@ -38,6 +39,10 @@
     "background:#1e3a5f;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}" +
     "#pwa-install-btn[hidden]{display:none !important}" +
     "#pwa-install-btn:hover{opacity:.85}" +
+    "#pwa-dismiss-bar{background:none;border:none;color:#94a3b8;font-size:20px;line-height:1;" +
+    "cursor:pointer;padding:4px 8px;min-height:44px;min-width:44px;flex-shrink:0;font-family:inherit}" +
+    "#pwa-dismiss-bar:hover{color:#334155}" +
+    "@media(prefers-color-scheme:dark){#pwa-dismiss-bar{color:#475569}#pwa-dismiss-bar:hover{color:#cbd5e1}}" +
     ".pwa-overlay{position:fixed;inset:0;z-index:10000;" +
     "background:rgba(0,0,0,.55);backdrop-filter:blur(3px);" +
     "display:flex;align-items:flex-end;justify-content:center;" +
@@ -80,6 +85,15 @@
     installBtn = el("button", { id: "pwa-install-btn", type: "button", hidden: "" }, "📲 Installer l'application");
     bar.appendChild(installBtn);
     installBtn.addEventListener("click", onInstallClick);
+
+    var dismissBar = el("button", { id: "pwa-dismiss-bar", type: "button", "aria-label": "Fermer le bandeau" }, "✕");
+    dismissBar.addEventListener("click", function () {
+      try { localStorage.setItem("pwa-bar-dismissed", "1"); } catch(e) {}
+      var b = document.getElementById("pwa-bar");
+      if (b) b.hidden = true;
+      document.body.classList.remove("pwa-bar-visible");
+    });
+    bar.appendChild(dismissBar);
     // Appui long (2s) → diagnostic
     installBtn.addEventListener("touchstart", function () {
       _longPressed = false;
@@ -105,12 +119,17 @@
     );
   }
 
+  function isDismissed() {
+    try { return localStorage.getItem("pwa-bar-dismissed") === "1"; } catch(e) { return false; }
+  }
+
   function refreshBtn() {
     var bar = document.getElementById("pwa-bar");
     var installed = isStandalone();
+    var hide = installed || isDismissed();
     if (installBtn) installBtn.hidden = installed;
-    if (bar) bar.hidden = installed;
-    document.body.classList.toggle("pwa-bar-visible", !installed);
+    if (bar) bar.hidden = hide;
+    document.body.classList.toggle("pwa-bar-visible", !hide);
   }
 
   /* ── 6. Panneau debug ───────────────────────────────────────────── */
