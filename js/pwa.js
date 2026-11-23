@@ -240,8 +240,15 @@
         ["Touche Partager (le carré avec une flèche ↑).", "Touche « Sur l'écran d'accueil ».", "Touche « Ajouter »."]
       ]);
     } else {
+      var host = window.location.hostname;
       openModal("📲 Installer l'application", [
-        "Touche les 3 points ⋮\n→ « Installer l'application »\n   (ou « Ajouter à l'écran d'accueil »)\n→ « Installer »."
+        "Chrome n'a pas encore proposé l'installation automatique.\nInstalle l'appli manuellement :",
+        [
+          "Touche les 3 points ⋮ en haut à droite.",
+          "Touche « Installer l'application » (ou « Ajouter à l'écran d'accueil »).",
+          "Touche « Installer »."
+        ],
+        "Ou touche l'icône ⊕ dans la barre d'adresse Chrome.\n\nSi l'option est absente du menu :\nChrome ⋮ → Paramètres → Confidentialité et sécurité → Paramètres du site → " + host + " → Effacer et réinitialiser, puis reviens ici."
       ]);
     }
   }
