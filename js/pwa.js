@@ -44,8 +44,13 @@
     "padding:16px;box-sizing:border-box}" +
     ".pwa-card{width:100%;max-width:400px;" +
     "background:white;border-radius:16px;padding:24px;" +
-    "box-shadow:0 -4px 32px rgba(0,0,0,.2);max-height:80vh;overflow-y:auto}" +
-    ".pwa-card-title{font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px}" +
+    "box-shadow:0 -4px 32px rgba(0,0,0,.2);max-height:80vh;overflow-y:auto;position:relative}" +
+    ".pwa-card-title{font-size:17px;font-weight:600;color:#1e293b;margin-bottom:12px;padding-right:32px}" +
+    ".pwa-card-close{position:absolute;top:12px;right:12px;background:none;border:none;" +
+    "font-size:20px;line-height:1;cursor:pointer;color:#64748b;padding:4px 7px;" +
+    "border-radius:6px;min-height:32px;min-width:32px}" +
+    ".pwa-card-close:hover{background:#f1f5f9;color:#1e293b}" +
+    "@media(prefers-color-scheme:dark){.pwa-card-close{color:#94a3b8}.pwa-card-close:hover{background:#334155;color:#f1f5f9}}" +
     ".pwa-card-body{font-size:15px;color:#334155;line-height:1.7;margin-bottom:12px;white-space:pre-line}" +
     ".pwa-card ol{margin:4px 0 16px;padding-left:24px}" +
     ".pwa-card li{font-size:15px;color:#334155;line-height:1.6;margin-bottom:4px}" +
@@ -166,6 +171,9 @@
     lastFocus = document.activeElement;
     var overlay = el("div", { id: "pwa-overlay", class: "pwa-overlay" });
     var card    = el("div", { class: "pwa-card", role: "dialog", "aria-modal": "true" });
+    var xBtn = el("button", { class: "pwa-card-close", type: "button", "aria-label": "Fermer" }, "✕");
+    xBtn.addEventListener("click", closeModal);
+    card.appendChild(xBtn);
     card.appendChild(el("div", { class: "pwa-card-title" }, title));
     blocks.forEach(function (b) {
       if (Array.isArray(b)) {
